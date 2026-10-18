@@ -8,7 +8,7 @@ How StartFSGUI looks and behaves. **The shared rules are in the devkit: [scripts
 
 - **No manager list.** The manager is a dashboard (is the data safe, the numbers, the members), not a list of items, so it has no search box, no cursor and no per-item settings window. Its keys are `r` (look again) and `s` (settings).
 - **Some settings go to the daemon, not to the plugin.** The Node page (space offered, copies) runs `startfsgui set`, which runs `startfs config`. They apply instantly like the rest, but the daemon can refuse (lowering copies waits until every file has all its copies); the refusal is shown under the setting and the control flips back on the next read of `startfs status`. *Reset to defaults* never touches them: it resets the plugin's own settings, not the cluster's.
-- **The manager is taller than the shared 580.** It grows to 720 (at most the screen minus 80): the storage lines, the member rows with their versions and the installer's log do not fit in 580.
+- **The manager is taller than the shared 580.** It grows to 900 (at most the screen minus 80): the storage lines, six or more member rows with their versions and the installer's log do not fit in 580. The installer's log is one line per row, cut at the card's edge, in a box of its own, so its height never depends on how long the installer's sentences are.
 - **The bar icon is on in the recommended set**, because it is where "is my data safe" shows without opening anything.
 
 ## Storage figures

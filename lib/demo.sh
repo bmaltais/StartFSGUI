@@ -24,8 +24,10 @@ demo_json() {
          {id: 0, addr: "laptop.example.ts.net:7600", state: "Online", offer_bytes: $o, is_self: true, problem: null},
          {id: 1, addr: "desktop.example.ts.net:7600", state: "Online", offer_bytes: (10 | gib), is_self: false, problem: null},
          {id: 2, addr: "nas.example.ts.net:7600", state: "Online", offer_bytes: (100 | gib), is_self: false, problem: null},
-         {id: 3, addr: "vps.example.ts.net:7600", state: "Down", offer_bytes: (100 | gib), is_self: false, problem: "timed out"}],
-       nodes: 4, copies_possible: $copies, usable_bytes: (40 | gib), unreplicated: [], repair: null, unheard: [],
+         {id: 3, addr: "vps.example.ts.net:7600", state: "Down", offer_bytes: (100 | gib), is_self: false, problem: "timed out"},
+         {id: 4, addr: "ocilab1.example.ts.net:7600", state: "Online", offer_bytes: (100 | gib), is_self: false, problem: null},
+         {id: 5, addr: "mini1.example.ts.net:7600", state: "Online", offer_bytes: (100 | gib), is_self: false, problem: null}],
+       nodes: 6, copies_possible: $copies, usable_bytes: (40 | gib), unreplicated: [], repair: null, unheard: [],
        scrub: {state: "Idle"}, log: {entries: 1, objects: 6720}, gc: {pending_chunks: 0}, warnings: [], conflicts: []}'
 }
 
@@ -40,7 +42,8 @@ demo_stats() {
        efficiency: eff($plain; $used), pending_gc_bytes: 0}};
     [node(0; "laptop.example.ts.net:7600"; true; 2; 3; 10), node(1; "desktop.example.ts.net:7600"; false; 3; 4.5; 10),
      node(2; "nas.example.ts.net:7600"; false; 5; 7.5; 100),
-     {member: 3, addr: "vps.example.ts.net:7600", is_self: false, stats: null}]'
+     {member: 3, addr: "vps.example.ts.net:7600", is_self: false, stats: null},
+     node(4; "ocilab1.example.ts.net:7600"; false; 4.5; 6; 100), node(5; "mini1.example.ts.net:7600"; false; 4.2; 6.3; 100)]'
 }
 
 startfs() {
@@ -100,6 +103,9 @@ demo_install() { # <host> <version>
   sleep 0.4; echo "install: Checksum verified"
   sleep 0.4; echo "install: Stopped startfs.service, replaced the binary (old one kept as startfs.prev)"
   sleep 0.4; echo "install: Started startfs.service; the daemon answers"
+  echo "install: WARNING: protocol 6 -> 7. Members on different protocols cannot sync."
+  printf '%s\n' "        Upgrade every member; until they all match, 'startfs status' lists the others as unreachable." \
+    "Note: /home/bernard/.local/bin is not on your PATH, so 'startfs' will not be found yet. To keep it, add that line to ~/.profile (Ubuntu and Debian add ~/.local/bin themselves at your next login)."
   echo "$2 6" >"$DEMO_DIR/versions/$1"
   echo "install: Upgraded startfs $cur to $2"
 }

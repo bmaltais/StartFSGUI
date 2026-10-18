@@ -195,7 +195,7 @@ FocusScope {
         required property var modelData
         required property int index
         Layout.fillWidth: true
-        implicitHeight: row.implicitHeight + Style.space(10)
+        implicitHeight: row.implicitHeight + Style.space(6)
         radius: Math.max(Style.cornerRadius, Style.space(5))
         color: index === view.cursor ? Util.alpha(Color.accent, 0.18) : (hover.hovered ? Util.alpha(Color.foreground, 0.06) : "transparent")
         HoverHandler { id: hover }
@@ -220,19 +220,23 @@ FocusScope {
             font.family: Style.font.family
             font.pixelSize: Style.font.body
           }
+          // Fixed columns, so the versions and the sizes line up down the list; values are read at full strength, not muted.
           Text {
+            Layout.preferredWidth: Style.space(56)
+            horizontalAlignment: Text.AlignRight
             text: view.versionText(modelData)
-            color: view.versionText(modelData) === "unknown" ? Color.urgent : Color.muted
+            color: view.versionText(modelData) === "unknown" ? Color.urgent : Util.alpha(Color.foreground, 0.85)
             font.family: Style.font.family
-            font.pixelSize: Style.font.bodySmall
+            font.pixelSize: Style.font.body
           }
           Text {
-            Layout.preferredWidth: Style.space(130)
+            Layout.preferredWidth: Style.space(170)
             horizontalAlignment: Text.AlignRight
+            elide: Text.ElideLeft
             text: view.spaceText(modelData)
-            color: Color.muted
+            color: Util.alpha(Color.foreground, 0.85)
             font.family: Style.font.family
-            font.pixelSize: Style.font.bodySmall
+            font.pixelSize: Style.font.body
           }
         }
       }
@@ -274,15 +278,43 @@ FocusScope {
         onClicked: view.askUpdate()
       }
     }
-    // The installer's own words while it runs, and what it said last.
-    Text {
+    // The installer's own words while it runs, and what it said last: one line each, cut off at the card's edge, so the box has
+    // a height that does not depend on how long the installer's sentences are.
+    Rectangle {
       Layout.fillWidth: true
-      visible: view.svc.updateLog !== ""
-      wrapMode: Text.WordWrap
-      text: view.svc.updateHost + ":\n" + view.svc.updateLog
-      color: view.svc.updateFailed ? Color.urgent : Color.muted
-      font.family: Style.font.family
-      font.pixelSize: Style.font.bodySmall
+      visible: view.svc.updateLines.length > 0
+      implicitHeight: logCol.implicitHeight + Style.space(16)
+      radius: Math.max(Style.cornerRadius, Style.space(5))
+      color: Util.alpha(Color.foreground, 0.06)
+      clip: true
+      ColumnLayout {
+        id: logCol
+        anchors.fill: parent
+        anchors.margins: Style.space(8)
+        spacing: 0
+        Text {
+          Layout.fillWidth: true
+          elide: Text.ElideRight
+          text: view.svc.updateHost
+          color: Color.foreground
+          font.family: Style.font.family
+          font.pixelSize: Style.font.bodySmall
+          font.bold: true
+        }
+        Repeater {
+          model: view.svc.updateLines
+          delegate: Text {
+            required property string modelData
+            Layout.fillWidth: true
+            elide: Text.ElideRight
+            maximumLineCount: 1
+            text: modelData
+            color: view.svc.updateFailed ? Color.urgent : Util.alpha(Color.foreground, 0.8)
+            font.family: Style.font.family
+            font.pixelSize: Style.font.bodySmall
+          }
+        }
+      }
     }
 
     // Footer

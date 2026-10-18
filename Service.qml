@@ -110,13 +110,15 @@ Item {
   // The upgrade of one node: the installer's own output, line by line, kept as the last few lines.
   property bool updating: false
   property string updateHost: ""
-  property string updateLog: ""
+  property string updateLog: ""             // the same lines, joined, for the notification
+  property var updateLines: []
   property bool updateFailed: false
   function update(member, version) {
     if (root.updating) return
     root.updating = true
     root.updateHost = member.host
     root.updateLog = ""
+    root.updateLines = []
     root.updateFailed = false
     updateProc.member = member
     updateProc.command = [root.cli, "update", "--host", member.host].concat(member.self ? ["--self"] : [],
@@ -128,8 +130,12 @@ Item {
     property var member: null
     stdout: SplitParser {
       onRead: line => {
-        var lines = (root.updateLog === "" ? [] : root.updateLog.split("\n")).concat([line.replace(/^install: /, "")])
-        root.updateLog = lines.slice(-8).join("\n")
+        // One tidy line each: the installer's long, indented sentences would otherwise wrap past the card.
+        var tidy = line.replace(/^install: /, "").replace(/\s+/g, " ").trim()
+        if (tidy === "") return
+        var lines = root.updateLines.concat([tidy]).slice(-6)
+        root.updateLines = lines
+        root.updateLog = lines.join("\n")
       }
     }
     onExited: (code, exitStatus) => {
@@ -430,7 +436,7 @@ Item {
       anchors.verticalCenterOffset: win.dragY
       width: win.sizeW > 0 ? win.sizeW : Style.space(640)
       height: win.sizeH > 0 ? win.sizeH
-        : Math.max(Style.space(300), Math.min(managerView.implicitHeight, Style.space(720), (win.screen ? win.screen.height : 900) - Style.space(80)))
+        : Math.max(Style.space(300), Math.min(managerView.implicitHeight, Style.space(900), (win.screen ? win.screen.height : 900) - Style.space(80)))
       radius: root.radius
       color: Color.menu.background
       border.width: Style.normalBorderWidth
