@@ -10,15 +10,70 @@ function bytes(text) {
   return parseFloat(m[1]) * unit[m[2]]
 }
 
+// 1234567 -> "1.2 MiB", the way `startfs status` writes sizes.
+function formatBytes(n) {
+  var units = ["B", "KiB", "MiB", "GiB", "TiB"]
+  var v = Number(n)
+  var i = 0
+  while (v >= 1024 && i < units.length - 1) { v /= 1024; i++ }
+  return (i === 0 ? String(v) : v.toFixed(1)) + " " + units[i]
+}
+
+function emptyStatus() {
+  return { data: "", fs: "", copies: 0, node: "", stored: "", offered: "", possible: 0, wanted: 0, nodes: 0,
+           usable: "", cache: "", members: [], scrub: "", warnings: [], conflicts: [], repair: null, unreplicated: 0,
+           staging: "", ok: false }
+}
+
+// `startfs status --json`. The names of the fields are the daemon's (crates/startfs-core/src/control.rs).
+function fromJson(j) {
+  var out = emptyStatus()
+  if (!j.filesystem) return out
+  out.data = String(j.verdict || "").toUpperCase()
+  out.fs = j.filesystem.name
+  out.copies = j.filesystem.copies
+  out.wanted = j.filesystem.copies
+  out.node = String(j.node_state || "").toLowerCase()
+  out.stored = formatBytes(j.usage.stored_bytes)
+  out.offered = formatBytes(j.usage.offer_bytes)
+  out.possible = j.copies_possible
+  out.nodes = j.nodes
+  out.usable = formatBytes(j.usable_bytes)
+  out.cache = formatBytes(j.cache.used_bytes) + " used of " + formatBytes(j.cache.capacity_bytes)
+  out.scrub = String(j.scrub.state || "").replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase()
+  out.members = j.members.map(function (m) {
+    return { id: String(m.id), address: m.addr, host: m.addr.replace(/:\d+$/, "").split(".")[0],
+             state: String(m.state).toLowerCase() === "online" ? "up" : String(m.state).toLowerCase(),
+             offered: formatBytes(m.offer_bytes), self: !!m.is_self, problem: m.problem || "" }
+  })
+  out.warnings = j.warnings || []
+  out.conflicts = (j.conflicts || []).map(function (c) { return c.path })
+  out.repair = j.repair ? { atRisk: j.repair.at_risk, degraded: j.repair.degraded } : null
+  out.unreplicated = (j.unreplicated || []).reduce(function (n, f) { return n + f.chunks }, 0)
+  out.staging = j.staging && j.staging.chunks > 0 ? formatBytes(j.staging.bytes) + " in " + j.staging.chunks + " chunks" : ""
+  out.ok = out.data !== ""
+  return out
+}
+
 function parseStatus(text) {
+  var t = String(text).trim()
+  if (t.charAt(0) === "{") {
+    try { return fromJson(JSON.parse(t)) } catch (e) { return emptyStatus() }
+  }
+  return fromText(text)
+}
+
+// The text of builds that have no --json.
+function fromText(text) {
   var out = { data: "", fs: "", copies: 0, node: "", stored: "", offered: "", possible: 0, wanted: 0, nodes: 0,
-              usable: "", cache: "", members: [], scrub: "", warnings: [], ok: false }
+              usable: "", cache: "", members: [], scrub: "", warnings: [], conflicts: [], repair: null, unreplicated: 0,
+              staging: "", ok: false }
   var inMembers = false
   String(text).split("\n").forEach(function (line) {
     var m
     if (inMembers && (m = /^\s+(\d+)\s+(\S+)\s+(up|down|\S+)\s+([0-9.]+ \S+) offered(\s+\(this node\))?\s*$/.exec(line))) {
       out.members.push({ id: m[1], address: m[2], host: m[2].replace(/:\d+$/, "").split(".")[0], state: m[3],
-                         offered: m[4], self: !!m[5] })
+                         offered: m[4], self: !!m[5], problem: "" })
       return
     }
     inMembers = false
@@ -50,6 +105,7 @@ function headline(s) {
   if (!s || !s.ok) return "Cannot reach the StartFS daemon"
   if (s.data.toUpperCase() !== "SAFE") return "Data is " + s.data.toLowerCase()
   if (s.possible < s.wanted) return "Only " + s.possible + " of " + s.wanted + " copies possible"
+  if (s.repair) return "Safe, repairing " + (s.repair.atRisk + s.repair.degraded) + " chunks"
   return "Your data is safe"
 }
 

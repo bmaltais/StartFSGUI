@@ -1,5 +1,5 @@
-// The manager: is the data safe, who is in the filesystem, and this node's two settings (space offered, copies).
-// Keyboard: r refreshes, Esc closes.
+// The manager: is the data safe, who is in the filesystem, and what needs attention.
+// Keyboard: r looks again, s opens the settings, Esc closes.
 import QtQuick
 import QtQuick.Layouts
 import qs.Commons
@@ -14,14 +14,25 @@ FocusScope {
   readonly property bool degraded: view.svc.health !== "safe"
 
   implicitHeight: col.implicitHeight + Style.spacing.panelPadding * 2
-  // The box follows the daemon's value until the user is typing in it.
-  function syncOffer() { if (!offerField.focused) offerField.text = view.st.offered.replace(/\s+/g, "") }
-  onStChanged: view.syncOffer()
-  onVisibleChanged: if (visible) { view.syncOffer(); view.forceActiveFocus() }
+  readonly property var attention: {
+    var out = []
+    var s = view.st
+    if (!s.ok) return out
+    if (s.repair) out.push({ bad: false, text: "Repairing: " + s.repair.atRisk + " chunks at risk, " + s.repair.degraded + " degraded." })
+    else if (s.unreplicated > 0) out.push({ bad: false, text: s.unreplicated + " chunks are not fully replicated yet." })
+    if (s.staging !== "") out.push({ bad: false, text: "Waiting for replication: " + s.staging + "." })
+    s.warnings.forEach(function (w) { out.push({ bad: true, text: w }) })
+    if (s.conflicts.length > 0) out.push({ bad: true, text: s.conflicts.length + " conflict " + (s.conflicts.length === 1 ? "copy" : "copies") + ": delete one of each pair to resolve it." })
+    s.members.forEach(function (mb) { if (mb.problem !== "") out.push({ bad: true, text: mb.host + " cannot be reached: " + mb.problem }) })
+    return out
+  }
+  function focusList() { view.forceActiveFocus() }
+  onVisibleChanged: if (visible) view.forceActiveFocus()
 
   Keys.onPressed: event => {
     if (event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier)) return
     if (event.text === "r") { view.svc.refresh(); event.accepted = true }
+    else if (event.text === "s") { view.svc.showSetup(); event.accepted = true }
   }
 
   ColumnLayout {
@@ -92,6 +103,20 @@ FocusScope {
       }
     }
 
+    // What needs attention, only when there is something.
+    Repeater {
+      model: view.attention
+      delegate: Text {
+        required property var modelData
+        Layout.fillWidth: true
+        wrapMode: Text.WordWrap
+        text: modelData.text
+        color: modelData.bad ? Color.urgent : Color.muted
+        font.family: Style.font.family
+        font.pixelSize: Style.font.bodySmall
+      }
+    }
+
     Text {
       Layout.fillWidth: true
       visible: !view.st.ok
@@ -132,50 +157,6 @@ FocusScope {
           font.pixelSize: Style.font.body
         }
         Text { text: modelData.offered; color: Color.muted; font.family: Style.font.family; font.pixelSize: Style.font.bodySmall }
-      }
-    }
-
-    // This node's settings
-    Text {
-      visible: view.st.ok
-      text: "THIS NODE"
-      color: Color.muted
-      font.family: Style.font.family
-      font.pixelSize: Style.font.caption
-      font.letterSpacing: 1
-    }
-    RowLayout {
-      Layout.fillWidth: true
-      visible: view.st.ok
-      spacing: Style.spacing.xxl
-      Text { text: "Space offered"; color: Color.foreground; font.family: Style.font.family; font.pixelSize: Style.font.body }
-      Field {
-        id: offerField
-        Layout.fillWidth: true
-        placeholder: "500G"
-        onAccepted: if (Model.validSize(text)) view.svc.apply("offer", text.trim())
-      }
-      Button {
-        text: "Apply"
-        bordered: true
-        enabled: !view.svc.busy && Model.validSize(offerField.text)
-        onClicked: view.svc.apply("offer", offerField.text.trim())
-      }
-    }
-    RowLayout {
-      Layout.fillWidth: true
-      visible: view.st.ok
-      spacing: Style.spacing.md
-      Text { text: "Copies of every file"; color: Color.foreground; font.family: Style.font.family; font.pixelSize: Style.font.body }
-      Item { Layout.fillWidth: true }
-      Repeater {
-        model: [1, 2, 3, 4, 5]
-        delegate: Chip {
-          required property int modelData
-          label: String(modelData)
-          selected: modelData === view.st.copies
-          onClicked: if (!view.svc.busy && modelData !== view.st.copies) view.svc.apply("copies", modelData)
-        }
       }
     }
 

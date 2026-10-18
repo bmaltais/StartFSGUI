@@ -10,10 +10,6 @@ BarWidget.qml	unqualified	anchors
 BarWidget.qml	unqualified	parent
 BarWidget.qml	unresolved-type	Type BarWidget is used but it is not resolved
 BarWidget.qml	unresolved-type	Type anchors is used but it is not resolved
-Chip.qml	missing-property	Member "accent" not found on type "QQuickColor"
-Chip.qml	missing-property	Member "foreground" not found on type "QQuickColor"
-Chip.qml	unqualified	Style
-Chip.qml	unqualified	Util
 EntryText.qml	missing-property	Member "muted" not found on type "QQuickColor"
 Field.qml	missing-property	Member "accent" not found on type "QQuickColor"
 Field.qml	missing-property	Member "foreground" not found on type "QQuickColor"
@@ -26,23 +22,47 @@ ManagerView.qml	missing-property	Member "muted" not found on type "QQuickColor"
 ManagerView.qml	missing-property	Member "urgent" not found on type "QQuickColor"
 ManagerView.qml	unqualified	Style
 ManagerView.qml	unqualified	modelData
-ManagerView.qml	unqualified	view
 ScrollTrack.qml	missing-property	Member "foreground" not found on type "QQuickColor"
 ScrollTrack.qml	unqualified	Style
 ScrollTrack.qml	unqualified	Util
+Service.qml	block-scope-var-declaration	var declaration in block scope is hoisted to function scope Replace it with const or let to silence the warning 
+Service.qml	import	Button was not found. Did you add all imports and dependencies?
 Service.qml	missing-property	Member "foreground" not found on type "QQuickColor"
 Service.qml	missing-property	Member "menu" not found on type "QQuickColor"
 Service.qml	uncreatable-type	Type PanelWindow is not creatable.
 Service.qml	unqualified	Style
 Service.qml	unqualified	Util
+Service.qml	unqualified	anchors
+Service.qml	unqualified	index
+Service.qml	unqualified	parent
+Service.qml	unqualified	setupLoader
+Service.qml	unresolved-type	Type anchors is used but it is not resolved
 SettingsPill.qml	missing-property	Member "accent" not found on type "QQuickColor"
 SettingsPill.qml	missing-property	Member "foreground" not found on type "QQuickColor"
 SettingsPill.qml	missing-property	Member "menu" not found on type "QQuickColor"
 SettingsPill.qml	missing-property	Member "urgent" not found on type "QQuickColor"
 SettingsPill.qml	unqualified	Style
 SettingsPill.qml	unqualified	Util
-Switch.qml	missing-property	Member "accent" not found on type "QQuickColor"
-Switch.qml	missing-property	Member "foreground" not found on type "QQuickColor"
-Switch.qml	missing-property	Member "menu" not found on type "QQuickColor"
-Switch.qml	unqualified	Style
-Switch.qml	unqualified	Util
+SettingsWindow.qml	block-scope-var-declaration	var declaration in block scope is hoisted to function scope Replace it with const or let to silence the warning 
+SettingsWindow.qml	missing-property	Member "accent" not found on type "QQuickColor"
+SettingsWindow.qml	missing-property	Member "field" not found on type (component in SettingsWindow.qml)::item with type QObject
+SettingsWindow.qml	missing-property	Member "foreground" not found on type "QQuickColor"
+SettingsWindow.qml	missing-property	Member "menu" not found on type "QQuickColor"
+SettingsWindow.qml	missing-property	Member "muted" not found on type "QQuickColor"
+SettingsWindow.qml	missing-property	Member "urgent" not found on type "QQuickColor"
+SettingsWindow.qml	missing-property	Member "value" not found on type (component in SettingsWindow.qml)::item with type QObject
+SettingsWindow.qml	unqualified	Style
+SettingsWindow.qml	unqualified	Util
+SettingsWindow.qml	unqualified	choiceEditor
+SettingsWindow.qml	unqualified	choices
+SettingsWindow.qml	unqualified	flow
+SettingsWindow.qml	unqualified	flowEditor
+SettingsWindow.qml	unqualified	group
+SettingsWindow.qml	unqualified	modelData
+SettingsWindow.qml	unqualified	rows
+SettingsWindow.qml	unqualified	search
+SettingsWindow.qml	unqualified	switchEditor
+SettingsWindow.qml	unqualified	textEditor
+SettingsWindow.qml	unqualified	win
+SettingsWindow.qml	unused-imports	Unused import
+SetupView.qml	block-scope-var-declaration	var declaration in block scope is hoisted to function scope Replace it with const or let to silence the warning 

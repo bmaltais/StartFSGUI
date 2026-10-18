@@ -6,7 +6,9 @@ Built like the other Start apps (StartDrive, StartAppImage): a Quickshell plugin
 
 ## Status
 
-0.1.0, a first slice: a read-only dashboard (`startfs status`), an optional bar icon (red when the data is not safe) and the two live settings of `startfs config` (`--offer`, `--copies`). Not yet: create/join/leave/remove/revoke, `config.toml` keys.
+0.2.0: a dashboard (is the data safe, copies, usable space, members, repair, warnings and conflicts), a settings window in the Start family's look (this node's space offered and copies, launcher entry, command line, bar icon, remembered window), a movable and resizable manager, and an optional bar icon that turns red when the data is not safe. Not yet: create/join/leave/remove/revoke, `config.toml` keys.
+
+It reads `startfs status --json` when your `startfs` has it (added after 1.0.6) and the plain text of older builds otherwise.
 
 ## Develop
 

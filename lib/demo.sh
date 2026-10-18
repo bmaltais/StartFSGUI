@@ -8,9 +8,29 @@ mkdir -p "$DEMO_DIR"
 [[ -f $DEMO_DIR/offer ]] || echo "10.0 GiB" >"$DEMO_DIR/offer"
 [[ -f $DEMO_DIR/copies ]] || echo 3 >"$DEMO_DIR/copies"
 
+# The fixture as `startfs status --json` prints it. Sizes are in bytes, so the offer is read back from the text form's "10.0 GiB".
+demo_json() {
+  local offer copies
+  offer=$(<"$DEMO_DIR/offer"); copies=$(<"$DEMO_DIR/copies")
+  jq -nc --arg offer "$offer" --argjson copies "$copies" '
+    def gib: . * 1073741824;
+    ($offer | sub(" GiB$"; "") | sub("G$"; "") | tonumber | gib | floor) as $o
+    | {verdict: "Safe", filesystem: {name: "home", copies: $copies}, node_state: "Online",
+       usage: {chunks: 169, stored_bytes: 10905190, offer_bytes: $o}, staging: {chunks: 0, bytes: 0},
+       cache: {chunks: 12, used_bytes: 2831155, capacity_bytes: 1073741824},
+       members: [
+         {id: 0, addr: "laptop.example.ts.net:7600", state: "Online", offer_bytes: $o, is_self: true, problem: null},
+         {id: 1, addr: "desktop.example.ts.net:7600", state: "Online", offer_bytes: (10 | gib), is_self: false, problem: null},
+         {id: 2, addr: "nas.example.ts.net:7600", state: "Online", offer_bytes: (100 | gib), is_self: false, problem: null},
+         {id: 3, addr: "vps.example.ts.net:7600", state: "Down", offer_bytes: (100 | gib), is_self: false, problem: "timed out"}],
+       nodes: 4, copies_possible: $copies, usable_bytes: (40 | gib), unreplicated: [], repair: null, unheard: [],
+       scrub: {state: "Idle"}, log: {entries: 1, objects: 6720}, gc: {pending_chunks: 0}, warnings: [], conflicts: []}'
+}
+
 startfs() {
   case ${1:-} in
     status)
+      [[ ${2:-} == --json ]] && { demo_json; return; }
       cat <<STATUS
 data: SAFE
 filesystem: home ($(<"$DEMO_DIR/copies") copies)
