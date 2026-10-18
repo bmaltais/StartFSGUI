@@ -49,4 +49,7 @@ expect "a failing node fails the update" 'Connection timed out' bin/startfsgui u
 expect "an ssh option is not a host" 'not a host name' bin/startfsgui update --host -oProxyCommand=x
 expect "a host with a shell character is refused" 'not a host name' bin/startfsgui version --host 'a;b'
 expect "a bad release is refused" 'not a release' bin/startfsgui update --host mini2 --version latest
+expect "stats lists every member, one that did not answer included" '"stats":null' bin/startfsgui stats
+expect "stats carries the efficiency of a node" '"zstd_chunks":90' bin/startfsgui stats
+expect "status carries the efficiency block" '"efficiency":\{"logical_bytes":12884901888' bin/startfsgui status
 exit $fail

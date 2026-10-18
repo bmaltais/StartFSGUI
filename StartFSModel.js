@@ -19,10 +19,58 @@ function formatBytes(n) {
   return (i === 0 ? String(v) : v.toFixed(1)) + " " + units[i]
 }
 
+// "1.4x", or "" when there is nothing to compare with.
+function ratioText(a, b) { return b > 0 ? (a / b).toFixed(1) + "x" : "" }
+
 function emptyStatus() {
   return { data: "", fs: "", copies: 0, node: "", stored: "", offered: "", possible: 0, wanted: 0, nodes: 0,
            usable: "", cache: "", members: [], scrub: "", warnings: [], conflicts: [], repair: null, unreplicated: 0,
-           staging: "", ok: false }
+           staging: "", storage: null, ok: false }
+}
+
+// Where the space went (`efficiency` of status --json, from builds that report it): null when it is not there or there are no
+// files yet. `copies` turns this node's plaintext into its share of what the cluster should hold.
+function storageOf(e, copies) {
+  if (!e || !(e.logical_bytes > 0)) return null
+  var after = e.referenced_bytes + (e.inline_bytes || 0)
+  var expected = e.referenced_bytes * copies
+  return {
+    files: formatBytes(e.logical_bytes),
+    afterDedup: formatBytes(after),
+    dedup: ratioText(e.logical_bytes, after),
+    nodeDisk: formatBytes(e.local_disk_bytes),
+    compression: ratioText(e.local_plain_bytes, e.local_disk_bytes),
+    share: expected > 0 ? (100 * e.local_plain_bytes / expected).toFixed(1) + "%" : "",
+    zstdChunks: e.zstd_chunks || 0,
+    rawChunks: e.raw_chunks || 0
+  }
+}
+
+// `startfs stats --json` (one report per member, from builds that have it) as host -> what the member's row shows.
+// A member that did not answer has answered: false.
+function parseNodeStats(text, copies) {
+  var rows
+  try { rows = JSON.parse(String(text)) } catch (e) { return ({}) }
+  if (!Array.isArray(rows)) return ({})
+  var referenced = 0
+  rows.forEach(function (r) { if (!referenced && r.stats) referenced = r.stats.efficiency.referenced_bytes })
+  var expected = referenced * copies
+  var out = ({})
+  rows.forEach(function (r) {
+    var host = String(r.addr).replace(/:\d+$/, "").split(".")[0]
+    if (!r.stats) { out[host] = { answered: false }; return }
+    var s = r.stats
+    out[host] = {
+      answered: true,
+      disk: formatBytes(s.usage.stored_bytes),
+      offered: formatBytes(s.usage.offer_bytes),
+      chunks: s.usage.chunks,
+      compression: ratioText(s.efficiency.local_plain_bytes, s.efficiency.local_disk_bytes),
+      share: expected > 0 ? (100 * s.efficiency.local_plain_bytes / expected).toFixed(1) + "%" : "",
+      garbage: s.pending_gc_bytes > 0 ? formatBytes(s.pending_gc_bytes) : ""
+    }
+  })
+  return out
 }
 
 // `startfs status --json`. The names of the fields are the daemon's (crates/startfs-core/src/control.rs).
@@ -51,6 +99,7 @@ function fromJson(j) {
   out.repair = j.repair ? { atRisk: j.repair.at_risk, degraded: j.repair.degraded } : null
   out.unreplicated = (j.unreplicated || []).reduce(function (n, f) { return n + f.chunks }, 0)
   out.staging = j.staging && j.staging.chunks > 0 ? formatBytes(j.staging.bytes) + " in " + j.staging.chunks + " chunks" : ""
+  out.storage = storageOf(j.efficiency, j.filesystem.copies)
   out.ok = out.data !== ""
   return out
 }
@@ -67,7 +116,7 @@ function parseStatus(text) {
 function fromText(text) {
   var out = { data: "", fs: "", copies: 0, node: "", stored: "", offered: "", possible: 0, wanted: 0, nodes: 0,
               usable: "", cache: "", members: [], scrub: "", warnings: [], conflicts: [], repair: null, unreplicated: 0,
-              staging: "", ok: false }
+              staging: "", storage: null, ok: false }
   var inMembers = false
   String(text).split("\n").forEach(function (line) {
     var m

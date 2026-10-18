@@ -1,7 +1,7 @@
 {
   "name": "startfsgui",
   "private": true,
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Checks for StartFSGUI: the command-line tests, Node tests for the status parser, qmllint and the manifest.",
   "scripts": { "test": "node --test", "check": "scripts/check.sh" }
 }

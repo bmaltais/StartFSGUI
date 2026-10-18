@@ -17,6 +17,8 @@ demo_json() {
     ($offer | sub(" GiB$"; "") | sub("G$"; "") | tonumber | gib | floor) as $o
     | {verdict: "Safe", filesystem: {name: "home", copies: $copies}, node_state: "Online",
        usage: {chunks: 169, stored_bytes: 10905190, offer_bytes: $o}, staging: {chunks: 0, bytes: 0},
+       efficiency: {logical_bytes: (12 | gib), referenced_bytes: (6 | gib), inline_bytes: 0, local_plain_bytes: (3 | gib),
+                    local_disk_bytes: (2 | gib), raw_chunks: 10, zstd_chunks: 90},
        cache: {chunks: 12, used_bytes: 2831155, capacity_bytes: 1073741824},
        members: [
          {id: 0, addr: "laptop.example.ts.net:7600", state: "Online", offer_bytes: $o, is_self: true, problem: null},
@@ -27,8 +29,23 @@ demo_json() {
        scrub: {state: "Idle"}, log: {entries: 1, objects: 6720}, gc: {pending_chunks: 0}, warnings: [], conflicts: []}'
 }
 
+# The fixture as `startfs stats --json` prints it; the node called vps does not answer.
+demo_stats() {
+  jq -nc '
+    def gib: . * 1073741824;
+    def eff($plain; $disk): {logical_bytes: (12 | gib), referenced_bytes: (6 | gib), inline_bytes: 0, local_plain_bytes: ($plain | gib),
+                             local_disk_bytes: ($disk | gib), raw_chunks: 10, zstd_chunks: 90};
+    def node($m; $addr; $self; $used; $plain; $offer):
+      {member: $m, addr: $addr, is_self: $self, stats: {usage: {chunks: 700, stored_bytes: ($used | gib), offer_bytes: ($offer | gib)},
+       efficiency: eff($plain; $used), pending_gc_bytes: 0}};
+    [node(0; "laptop.example.ts.net:7600"; true; 2; 3; 10), node(1; "desktop.example.ts.net:7600"; false; 3; 4.5; 10),
+     node(2; "nas.example.ts.net:7600"; false; 5; 7.5; 100),
+     {member: 3, addr: "vps.example.ts.net:7600", is_self: false, stats: null}]'
+}
+
 startfs() {
   case ${1:-} in
+    stats) demo_stats ;;
     status)
       [[ ${2:-} == --json ]] && { demo_json; return; }
       cat <<STATUS

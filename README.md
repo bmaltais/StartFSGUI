@@ -6,7 +6,7 @@ Built like the other Start apps (StartDrive, StartAppImage): a Quickshell plugin
 
 ## Status
 
-0.3.0: update a node from the manager (StartFS's installer, over ssh; this node last). 0.2.0: a dashboard (is the data safe, copies, usable space, members, repair, warnings and conflicts), a settings window in the Start family's look (this node's space offered and copies, launcher entry, command line, bar icon, remembered window), a movable and resizable manager, and an optional bar icon that turns red when the data is not safe. Not yet: create/join/leave/remove/revoke, `config.toml` keys.
+0.4.0: storage figures (files vs after dedup, compression, each node's share) when the daemon reports them. 0.3.0: update a node from the manager (StartFS's installer, over ssh; this node last). 0.2.0: a dashboard (is the data safe, copies, usable space, members, repair, warnings and conflicts), a settings window in the Start family's look (this node's space offered and copies, launcher entry, command line, bar icon, remembered window), a movable and resizable manager, and an optional bar icon that turns red when the data is not safe. Not yet: create/join/leave/remove/revoke, `config.toml` keys.
 
 It reads `startfs status --json` when your `startfs` has it (added after 1.0.6) and the plain text of older builds otherwise.
 

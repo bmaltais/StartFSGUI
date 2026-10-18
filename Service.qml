@@ -93,6 +93,20 @@ Item {
     }
   }
 
+  // Every member's storage figures (builds that have `startfs stats`): host -> what its row shows. It asks every member right
+  // then, so it runs when the window opens and when asked to look again, not on every poll. An older startfs fails and the
+  // rows just have no figures.
+  property var nodeStats: ({})
+  function refreshStats() { if (!statsProc.running) statsProc.running = true }
+  Process {
+    id: statsProc
+    command: [root.cli, "stats"]
+    stdout: StdioCollector {
+      onStreamFinished: root.nodeStats = Model.parseNodeStats(text, root.status.copies)
+    }
+    onExited: (code, exitStatus) => { if (code !== 0) root.nodeStats = ({}) }
+  }
+
   // The upgrade of one node: the installer's own output, line by line, kept as the last few lines.
   property bool updating: false
   property string updateHost: ""
@@ -129,6 +143,7 @@ Item {
       delete next[host]
       root.versions = next
       root.refresh()
+      root.refreshStats()
       root.checkVersions(false)
     }
   }
@@ -185,6 +200,7 @@ Item {
     root.setupOpen = false
     root.targetScreen = root.focusedScreen()
     root.refresh()
+    root.refreshStats()
     root.checkVersions(true)
     root.shown = true
     Qt.callLater(function () { managerView.focusList() })
@@ -414,7 +430,7 @@ Item {
       anchors.verticalCenterOffset: win.dragY
       width: win.sizeW > 0 ? win.sizeW : Style.space(640)
       height: win.sizeH > 0 ? win.sizeH
-        : Math.max(Style.space(300), Math.min(managerView.implicitHeight, Style.space(580), (win.screen ? win.screen.height : 900) - Style.space(80)))
+        : Math.max(Style.space(300), Math.min(managerView.implicitHeight, Style.space(720), (win.screen ? win.screen.height : 900) - Style.space(80)))
       radius: root.radius
       color: Color.menu.background
       border.width: Style.normalBorderWidth

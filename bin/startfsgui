@@ -33,6 +33,7 @@ Usage: startfsgui <command>
   window [--size WxH] [--offset X,Y] [--reset] [--setup-size WxH] [--setup-offset X,Y] [--reset-setup]
                               where the windows were left; no option prints them as JSON
   ui                          show or hide the manager window
+  stats                       every member's storage figures, as JSON (builds that have `startfs stats`)
   set offer SIZE              space this node offers, like 500M, 10G, 2T (0 = pure client)
   set copies N                copies of every chunk, for the whole filesystem (1 to 9)
 Demo:  STARTFSGUI_DEMO=1 runs every command on a fixture, touching nothing real (used by the test session)
@@ -41,6 +42,7 @@ USAGE
 
 case "${1:-}" in
   status) cmd_status ;;
+  stats) cmd_stats ;;
   set) shift; cmd_set "$@" ;;
   version) shift; cmd_version "$@" ;;
   update) shift; cmd_update "$@" ;;

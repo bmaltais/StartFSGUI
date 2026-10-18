@@ -1,0 +1,1 @@
+[{"member":0,"addr":"3090.taild10b64.ts.net:44824","is_self":true,"stats":{"usage":{"chunks":0,"stored_bytes":0,"offer_bytes":10737418240},"efficiency":{"logical_bytes":0,"referenced_bytes":0,"inline_bytes":0,"local_plain_bytes":0,"local_disk_bytes":0,"raw_chunks":0,"zstd_chunks":0},"pending_gc_bytes":0}}]

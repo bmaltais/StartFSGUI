@@ -5,7 +5,7 @@ const path = require("node:path")
 
 // StartFSModel.js is a QML library; load it as a plain script.
 const source = fs.readFileSync(path.join(__dirname, "..", "StartFSModel.js"), "utf8").replace(/^\.pragma.*$/m, "")
-const M = new Function(source + "\nreturn { bytes, formatBytes, parseStatus, health, headline, validSize }")()
+const M = new Function(source + "\nreturn { bytes, formatBytes, parseStatus, parseNodeStats, health, headline, validSize }")()
 
 const REAL = `data: SAFE
 filesystem: home (3 copies)
@@ -94,4 +94,69 @@ test("repair shows in the headline", () => {
 test("no filesystem or broken JSON is unknown", () => {
   assert.strictEqual(M.health(M.parseStatus('{"filesystem":null}')), "unknown")
   assert.strictEqual(M.health(M.parseStatus("{oops")), "unknown")
+})
+
+// The two fixtures are what the storage-efficiency build printed from a throwaway daemon with no files yet.
+const GiB = 1073741824
+const withFiles = (fixture) => {
+  const j = JSON.parse(fs.readFileSync(path.join(__dirname, fixture), "utf8"))
+  return j
+}
+
+test("a build that reports efficiency but has no files yet shows no storage block", () => {
+  const s = M.parseStatus(fs.readFileSync(path.join(__dirname, "fixture-status-1.0.8.json"), "utf8"))
+  assert.strictEqual(s.ok, true)
+  assert.strictEqual(s.storage, null)
+})
+
+test("efficiency becomes the storage block", () => {
+  const j = withFiles("fixture-status-1.0.8.json")
+  j.efficiency = { logical_bytes: 12 * GiB, referenced_bytes: 6 * GiB, inline_bytes: 0, local_plain_bytes: 3 * GiB,
+                   local_disk_bytes: 2 * GiB, raw_chunks: 10, zstd_chunks: 90 }
+  const s = M.parseStatus(JSON.stringify(j))
+  assert.strictEqual(s.storage.files, "12.0 GiB")
+  assert.strictEqual(s.storage.afterDedup, "6.0 GiB")
+  assert.strictEqual(s.storage.dedup, "2.0x")
+  assert.strictEqual(s.storage.nodeDisk, "2.0 GiB")
+  assert.strictEqual(s.storage.compression, "1.5x")
+  assert.strictEqual(s.storage.share, "50.0%")      // 3 GiB of 6 GiB x 1 copy
+  assert.strictEqual(s.storage.zstdChunks, 90)
+})
+
+test("an older build, with no efficiency at all, has no storage block", () => {
+  const j = withFiles("fixture-status-1.0.8.json")
+  delete j.efficiency
+  assert.strictEqual(M.parseStatus(JSON.stringify(j)).storage, null)
+})
+
+test("node stats: an empty cluster", () => {
+  const r = M.parseNodeStats(fs.readFileSync(path.join(__dirname, "fixture-stats-empty.json"), "utf8"), 1)
+  const host = Object.keys(r)[0]
+  assert.strictEqual(host, "3090")
+  assert.strictEqual(r[host].answered, true)
+  assert.strictEqual(r[host].disk, "0 B")
+  assert.strictEqual(r[host].offered, "10.0 GiB")
+  assert.strictEqual(r[host].compression, "")
+  assert.strictEqual(r[host].share, "")
+})
+
+test("node stats: shares, compression and a member that did not answer", () => {
+  const eff = (plain, disk) => ({ logical_bytes: 12 * GiB, referenced_bytes: 6 * GiB, inline_bytes: 0, local_plain_bytes: plain,
+                                  local_disk_bytes: disk, raw_chunks: 0, zstd_chunks: 1 })
+  const rows = [
+    { member: 0, addr: "mini2.ts.net:7600", is_self: false, stats: { usage: { chunks: 5, stored_bytes: 2 * GiB, offer_bytes: 10 * GiB },
+      efficiency: eff(4 * GiB, 2 * GiB), pending_gc_bytes: 1048576 } },
+    { member: 1, addr: "vps1.ts.net:7600", is_self: false, stats: null }
+  ]
+  const r = M.parseNodeStats(JSON.stringify(rows), 3)
+  assert.strictEqual(r.mini2.disk, "2.0 GiB")
+  assert.strictEqual(r.mini2.compression, "2.0x")
+  assert.strictEqual(r.mini2.share, "22.2%")        // 4 GiB of 6 GiB x 3 copies
+  assert.strictEqual(r.mini2.garbage, "1.0 MiB")
+  assert.strictEqual(r.vps1.answered, false)
+})
+
+test("node stats: nonsense is empty, not an error", () => {
+  assert.deepStrictEqual(M.parseNodeStats("not json", 3), {})
+  assert.deepStrictEqual(M.parseNodeStats('{"a":1}', 3), {})
 })

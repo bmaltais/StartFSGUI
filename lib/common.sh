@@ -30,6 +30,10 @@ reply_err() { jq -nc --arg e "$1" '{ok: false, error: $e}'; return 1; }
 # Builds that have `--json` give the plugin everything; an older one is read from its text (see StartFSModel.js).
 cmd_status() { startfs status --json 2>/dev/null || startfs status; }
 
+# Every member's storage figures, right now (`startfs stats`, which builds after 1.0.7 have). An older startfs fails here and the
+# window simply shows no per-node figures.
+cmd_stats() { startfs stats --json; }
+
 cmd_set() {
   local key=${1:-} value=${2:-} out
   case $key in

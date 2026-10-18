@@ -14,6 +14,30 @@ FocusScope {
   readonly property bool degraded: view.svc.health !== "safe"
 
   implicitHeight: col.implicitHeight + Style.spacing.panelPadding * 2
+  // The numbers under the header. The storage lines come from builds that report where the space went; an older one just has none.
+  readonly property var facts: {
+    var s = view.st
+    var o = s.storage
+    var f = [
+      ["FILESYSTEM", s.fs + " (" + s.copies + " copies)"],
+      ["COPIES POSSIBLE", s.possible + " of " + s.wanted + " on " + s.nodes + " nodes"]
+    ]
+    if (o) {
+      f.push(["IN FILES", o.files])
+      f.push(["AFTER DEDUP", o.afterDedup + (o.dedup !== "" ? "  (" + o.dedup + ")" : "")])
+    }
+    f.push(["STORED", s.stored], ["USABLE", s.usable])
+    if (o) f.push(["THIS NODE", o.nodeDisk + " on disk" + (o.compression !== "" ? ", compression " + o.compression : "")
+      + (o.share !== "" ? ", " + o.share + " of the replicas" : ""), true])
+    f.push(["CACHE", s.cache], ["SCRUB", s.scrub])
+    return f
+  }
+  // What a member's row says about its space: its use of what it offers once asked, else just what it offers.
+  function spaceText(m) {
+    var n = view.svc.nodeStats[m.host]
+    if (n === undefined) return m.offered
+    return n.answered ? n.disk + " of " + n.offered : "no answer"
+  }
   readonly property var attention: {
     var out = []
     var s = view.st
@@ -53,7 +77,7 @@ FocusScope {
     if (event.key === Qt.Key_Up || event.text === "k") { view.move(-1); event.accepted = true }
     else if (event.key === Qt.Key_Down || event.text === "j") { view.move(1); event.accepted = true }
     else if (event.text === "u") { if (view.versionOk) view.askUpdate(); event.accepted = true }
-    else if (event.text === "r") { view.svc.refresh(); view.svc.checkVersions(true); event.accepted = true }
+    else if (event.text === "r") { view.svc.refresh(); view.svc.refreshStats(); view.svc.checkVersions(true); event.accepted = true }
     else if (event.text === "s") { view.svc.showSetup(); event.accepted = true }
   }
 
@@ -92,7 +116,7 @@ FocusScope {
         iconText: ""
         tooltipText: "Look again  (r)"
         iconSpinning: spin.running
-        onClicked: { spin.restart(); view.svc.refresh(); view.svc.checkVersions(true) }
+        onClicked: { spin.restart(); view.svc.refresh(); view.svc.refreshStats(); view.svc.checkVersions(true) }
         Timer { id: spin; interval: 900 }
       }
       Button {
@@ -112,20 +136,22 @@ FocusScope {
       columnSpacing: Style.spacing.xxl
       rowSpacing: Style.spacing.md
       Repeater {
-        model: [
-          ["FILESYSTEM", view.st.fs + " (" + view.st.copies + " copies)"],
-          ["COPIES POSSIBLE", view.st.possible + " of " + view.st.wanted + " on " + view.st.nodes + " nodes"],
-          ["STORED", view.st.stored],
-          ["USABLE", view.st.usable],
-          ["CACHE", view.st.cache],
-          ["SCRUB", view.st.scrub]
-        ]
+        model: view.facts
         delegate: ColumnLayout {
           required property var modelData
           Layout.fillWidth: true
+          // A long line takes the whole row.
+          Layout.columnSpan: modelData[2] ? 2 : 1
           spacing: 0
           Text { text: modelData[0]; color: Color.muted; font.family: Style.font.family; font.pixelSize: Style.font.caption; font.letterSpacing: 1 }
-          Text { text: modelData[1]; color: Color.foreground; font.family: Style.font.family; font.pixelSize: Style.font.body }
+          Text {
+            Layout.fillWidth: true
+            wrapMode: Text.WordWrap
+            text: modelData[1]
+            color: Color.foreground
+            font.family: Style.font.family
+            font.pixelSize: Style.font.body
+          }
         }
       }
     }
@@ -201,9 +227,9 @@ FocusScope {
             font.pixelSize: Style.font.bodySmall
           }
           Text {
-            Layout.preferredWidth: Style.space(80)
+            Layout.preferredWidth: Style.space(130)
             horizontalAlignment: Text.AlignRight
-            text: modelData.offered
+            text: view.spaceText(modelData)
             color: Color.muted
             font.family: Style.font.family
             font.pixelSize: Style.font.bodySmall

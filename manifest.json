@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "io.github.bmaltais.startfsgui",
   "name": "StartFSGUI",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "author": "Bernard Maltais",
   "license": "MIT",
   "description": "See whether your StartFS data is safe and configure this node (space offered, number of copies) from the Omarchy shell.",
