@@ -21,7 +21,10 @@ ManagerView.qml	missing-property	Member "foreground" not found on type "QQuickCo
 ManagerView.qml	missing-property	Member "muted" not found on type "QQuickColor"
 ManagerView.qml	missing-property	Member "urgent" not found on type "QQuickColor"
 ManagerView.qml	unqualified	Style
+ManagerView.qml	unqualified	Util
+ManagerView.qml	unqualified	index
 ManagerView.qml	unqualified	modelData
+ManagerView.qml	unqualified	view
 ScrollTrack.qml	missing-property	Member "foreground" not found on type "QQuickColor"
 ScrollTrack.qml	unqualified	Style
 ScrollTrack.qml	unqualified	Util

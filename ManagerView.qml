@@ -1,5 +1,5 @@
 // The manager: is the data safe, who is in the filesystem, and what needs attention.
-// Keyboard: r looks again, s opens the settings, Esc closes.
+// Keyboard: Up/Down (or j/k) pick a node, u updates it (press twice), r looks again, s opens the settings, Esc closes.
 import QtQuick
 import QtQuick.Layouts
 import qs.Commons
@@ -26,12 +26,34 @@ FocusScope {
     s.members.forEach(function (mb) { if (mb.problem !== "") out.push({ bad: true, text: mb.host + " cannot be reached: " + mb.problem }) })
     return out
   }
+  property int cursor: 0
+  readonly property var member: view.st.members.length ? view.st.members[Math.min(view.cursor, view.st.members.length - 1)] : null
+  property bool confirming: false
+  function move(dy) { view.cursor = Math.max(0, Math.min(view.st.members.length - 1, view.cursor + dy)); view.confirming = false }
+  // Two presses to upgrade: the first asks, the second goes. It lapses after three seconds.
+  function askUpdate() {
+    if (!view.member || view.svc.updating) return
+    if (view.confirming) { view.confirming = false; confirmTimer.stop(); view.svc.update(view.member, versionField.text.trim()) }
+    else { view.confirming = true; confirmTimer.restart() }
+  }
+  Timer { id: confirmTimer; interval: 3000; onTriggered: view.confirming = false }
+  readonly property bool versionOk: versionField.text.trim() === "" || /^v[0-9]+\.[0-9]+\.[0-9]+$/.test(versionField.text.trim())
+  function versionText(m) {
+    var v = view.svc.versions[m.host]
+    if (v === undefined) return m.state === "up" || m.self ? "…" : "down"
+    return v.error !== undefined ? "unknown" : v.version
+  }
   function focusList() { view.forceActiveFocus() }
-  onVisibleChanged: if (visible) view.forceActiveFocus()
+  onVisibleChanged: if (visible) { view.cursor = 0; view.confirming = false; view.forceActiveFocus() }
 
   Keys.onPressed: event => {
     if (event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier)) return
-    if (event.text === "r") { view.svc.refresh(); event.accepted = true }
+    // Typing in the release box is not a command.
+    if (versionField.focused) return
+    if (event.key === Qt.Key_Up || event.text === "k") { view.move(-1); event.accepted = true }
+    else if (event.key === Qt.Key_Down || event.text === "j") { view.move(1); event.accepted = true }
+    else if (event.text === "u") { if (view.versionOk) view.askUpdate(); event.accepted = true }
+    else if (event.text === "r") { view.svc.refresh(); view.svc.checkVersions(true); event.accepted = true }
     else if (event.text === "s") { view.svc.showSetup(); event.accepted = true }
   }
 
@@ -70,8 +92,13 @@ FocusScope {
         iconText: ""
         tooltipText: "Look again  (r)"
         iconSpinning: spin.running
-        onClicked: { spin.restart(); view.svc.refresh() }
+        onClicked: { spin.restart(); view.svc.refresh(); view.svc.checkVersions(true) }
         Timer { id: spin; interval: 900 }
+      }
+      Button {
+        iconText: ""
+        tooltipText: "Settings  (s)"
+        onClicked: view.svc.showSetup()
       }
       // Keeps clear of the close button in the card's corner.
       Item { Layout.preferredWidth: Style.space(24) }
@@ -138,26 +165,98 @@ FocusScope {
     }
     Repeater {
       model: view.st.members
-      delegate: RowLayout {
+      delegate: Rectangle {
         required property var modelData
+        required property int index
         Layout.fillWidth: true
-        spacing: Style.spacing.xxl
-        Rectangle {
-          Layout.preferredWidth: Style.space(8)
-          Layout.preferredHeight: Style.space(8)
-          radius: width / 2
-          color: modelData.state === "up" ? Color.accent : Color.urgent
+        implicitHeight: row.implicitHeight + Style.space(10)
+        radius: Math.max(Style.cornerRadius, Style.space(5))
+        color: index === view.cursor ? Util.alpha(Color.accent, 0.18) : (hover.hovered ? Util.alpha(Color.foreground, 0.06) : "transparent")
+        HoverHandler { id: hover }
+        MouseArea { anchors.fill: parent; onClicked: { view.cursor = index; view.confirming = false; view.forceActiveFocus() } }
+        RowLayout {
+          id: row
+          anchors.fill: parent
+          anchors.leftMargin: Style.spacing.xxl
+          anchors.rightMargin: Style.spacing.xxl
+          spacing: Style.spacing.xxl
+          Rectangle {
+            Layout.preferredWidth: Style.space(8)
+            Layout.preferredHeight: Style.space(8)
+            radius: width / 2
+            color: modelData.state === "up" ? Color.accent : Color.urgent
+          }
+          Text {
+            Layout.fillWidth: true
+            elide: Text.ElideRight
+            text: modelData.host + (modelData.self ? "  (this node)" : "")
+            color: Color.foreground
+            font.family: Style.font.family
+            font.pixelSize: Style.font.body
+          }
+          Text {
+            text: view.versionText(modelData)
+            color: view.versionText(modelData) === "unknown" ? Color.urgent : Color.muted
+            font.family: Style.font.family
+            font.pixelSize: Style.font.bodySmall
+          }
+          Text {
+            Layout.preferredWidth: Style.space(80)
+            horizontalAlignment: Text.AlignRight
+            text: modelData.offered
+            color: Color.muted
+            font.family: Style.font.family
+            font.pixelSize: Style.font.bodySmall
+          }
         }
-        Text {
-          Layout.fillWidth: true
-          elide: Text.ElideRight
-          text: modelData.host + (modelData.self ? "  (this node)" : "")
-          color: Color.foreground
-          font.family: Style.font.family
-          font.pixelSize: Style.font.body
-        }
-        Text { text: modelData.offered; color: Color.muted; font.family: Style.font.family; font.pixelSize: Style.font.bodySmall }
       }
+    }
+
+    // Upgrade the picked node: StartFS's own installer, over ssh (or here, for this node).
+    RowLayout {
+      Layout.fillWidth: true
+      visible: view.member !== null
+      spacing: Style.spacing.xxl
+      Field {
+        id: versionField
+        Layout.preferredWidth: Style.space(150)
+        placeholder: "latest (or v1.0.7)"
+        onEscaped: text = ""
+      }
+      Text {
+        Layout.fillWidth: true
+        wrapMode: Text.WordWrap
+        readonly property var v: view.member ? view.svc.versions[view.member.host] : undefined
+        readonly property bool bad: v !== undefined && v.error !== undefined
+        text: {
+          if (!view.member) return ""
+          if (view.confirming) return view.member.self
+            ? "Press u again. The daemon restarts and the mount drops for a few seconds."
+            : "Press u again to update " + view.member.host + "."
+          if (bad) return view.member.host + " could not be asked: " + v.error
+          return view.member.self ? "Update this node last: its mount drops while the daemon restarts." : "Updates over ssh with StartFS's installer."
+        }
+        color: bad ? Color.urgent : Color.muted
+        font.family: Style.font.family
+        font.pixelSize: Style.font.bodySmall
+      }
+      Button {
+        text: view.confirming ? "Click again to update" : (view.svc.updating ? "Updating…" : "Update")
+        bordered: true
+        enabled: view.member !== null && !view.svc.updating && view.versionOk
+        tooltipText: "Run StartFS's installer on this node  (u)"
+        onClicked: view.askUpdate()
+      }
+    }
+    // The installer's own words while it runs, and what it said last.
+    Text {
+      Layout.fillWidth: true
+      visible: view.svc.updateLog !== ""
+      wrapMode: Text.WordWrap
+      text: view.svc.updateHost + ":\n" + view.svc.updateLog
+      color: view.svc.updateFailed ? Color.urgent : Color.muted
+      font.family: Style.font.family
+      font.pixelSize: Style.font.bodySmall
     }
 
     // Footer

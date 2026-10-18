@@ -37,4 +37,16 @@ expect "a bad flag value is refused" 'takes true or false' bin/startfsgui setup 
 expect "window memory is saved" '"x":5,"y":-5' bash -c 'bin/startfsgui window --offset 5,-5'
 expect "switching remember-position off forgets it" '"x":0,"y":0' bash -c 'bin/startfsgui setup --remember-position false --json >/dev/null; bin/startfsgui window'
 expect "setup off removes the launcher" 'No such file' bash -c 'bin/startfsgui setup --launcher false --cli false --json >/dev/null; cat "$XDG_DATA_HOME/applications/startfsgui.desktop"'
+expect "a node's version is read" '"version":"1.0.6","protocol":6' bin/startfsgui version --host mini2
+expect "this node's version is read" '"version":"1.0.6"' bin/startfsgui version --host laptop --self
+expect "an unreachable node says why" 'Connection timed out' bin/startfsgui version --host vps
+expect "update runs the installer" 'Upgraded startfs 1.0.6 to 1.0.7' bin/startfsgui update --host mini2
+expect "the node is on the new version" '"version":"1.0.7"' bin/startfsgui version --host mini2
+expect "other nodes are untouched" '"version":"1.0.6"' bin/startfsgui version --host desktop
+expect "updating a current node says so" 'already up to date' bin/startfsgui update --host mini2
+expect "a pinned release is honoured" 'Upgraded startfs 1.0.6 to 1.0.8' bin/startfsgui update --host nas --version v1.0.8
+expect "a failing node fails the update" 'Connection timed out' bin/startfsgui update --host vps
+expect "an ssh option is not a host" 'not a host name' bin/startfsgui update --host -oProxyCommand=x
+expect "a host with a shell character is refused" 'not a host name' bin/startfsgui version --host 'a;b'
+expect "a bad release is refused" 'not a release' bin/startfsgui update --host mini2 --version latest
 exit $fail

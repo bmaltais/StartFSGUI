@@ -12,6 +12,8 @@ readonly CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/startfsgui"
 source "$SG_HOME/lib/common.sh"
 # shellcheck source=/dev/null
 source "$SG_HOME/lib/prefs.sh"
+# shellcheck source=/dev/null
+source "$SG_HOME/lib/update.sh"
 if [[ ${STARTFSGUI_DEMO:-} == 1 || -f $CONFIG_DIR/demo/ENABLED ]]; then
   # shellcheck source=/dev/null
   source "$SG_HOME/lib/demo.sh"
@@ -22,6 +24,9 @@ usage() {
 Usage: startfsgui <command>
 
   status                      what `startfs status` prints (the plugin parses it)
+  version --host H [--self]   the startfs installed on a node, as JSON (over ssh unless --self)
+  update --host H [--self] [--version vX.Y.Z]
+                              run the StartFS installer on a node (over ssh unless --self); latest release unless pinned
   integration                 what is switched on, as JSON
   setup [--launcher B] [--cli B] [--bar-icon B] [--remember-size B] [--remember-position B] [--done] [--json]
                               switch the app launcher entry, command-line link and bar icon
@@ -37,6 +42,8 @@ USAGE
 case "${1:-}" in
   status) cmd_status ;;
   set) shift; cmd_set "$@" ;;
+  version) shift; cmd_version "$@" ;;
+  update) shift; cmd_update "$@" ;;
   integration) cmd_integration ;;
   setup) shift; cmd_setup "$@" ;;
   window) shift; cmd_window "$@" ;;

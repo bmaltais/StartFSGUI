@@ -62,3 +62,27 @@ STATUS
     *) echo "startfsgui: demo mode refuses to run 'startfs ${1:-}'" >&2; return 1 ;;
   esac
 }
+
+# ---- upgrading: nothing is run anywhere ---------------------------------------------------------
+# Every node reports 1.0.6 until "updated" (the answer is kept in a file); the node called vps cannot be reached.
+demo_version() { local f="$DEMO_DIR/versions/$1"; if [[ -f $f ]]; then cat "$f"; else echo "1.0.6 6"; fi; }
+run_on() { # <host|""> <command>: answers the two commands lib/update.sh sends
+  local host=${1:-self} cmd=$2 v
+  [[ $host != vps ]] || { echo "ssh: connect to host vps port 22: Connection timed out" >&2; return 255; }
+  mkdir -p "$DEMO_DIR/versions"
+  case $cmd in
+    *"startfs --version"*) read -r v p <<<"$(demo_version "$host")"; echo "startfs $v (protocol $p)" ;;
+    *STARTFS_VERSION=*) v=${cmd#*STARTFS_VERSION=}; v=${v%% *}; v=${v#v}; demo_install "$host" "$v" ;;
+    *) demo_install "$host" "1.0.7" ;;
+  esac
+}
+demo_install() { # <host> <version>
+  local cur; read -r cur _ <<<"$(demo_version "$1")"
+  if [[ $cur == "$2" ]]; then echo "install: startfs $cur is already up to date"; return 0; fi
+  echo "install: Downloading startfs-v$2-x86_64-linux"
+  sleep 0.4; echo "install: Checksum verified"
+  sleep 0.4; echo "install: Stopped startfs.service, replaced the binary (old one kept as startfs.prev)"
+  sleep 0.4; echo "install: Started startfs.service; the daemon answers"
+  echo "$2 6" >"$DEMO_DIR/versions/$1"
+  echo "install: Upgraded startfs $cur to $2"
+}

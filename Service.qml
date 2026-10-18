@@ -55,6 +55,86 @@ Item {
     onExited: (code, status) => { if (code !== 0) { root.status = Model.parseStatus(""); root.loaded = true } }
   }
 
+  // ---- node versions and upgrades -----------------------------------------------------------
+  // host -> { version, protocol } once read, or { error } when the node could not be asked. Read over ssh, one node at a time.
+  property var versions: ({})
+  property var versionQueue: []
+  function checkVersions(force) {
+    var queue = []
+    root.status.members.forEach(function (m) {
+      if (m.state !== "up" && !m.self) return
+      if (!force && root.versions[m.host] !== undefined) return
+      queue.push(m)
+    })
+    root.versionQueue = queue
+    root.nextVersion()
+  }
+  function nextVersion() {
+    if (versionProc.running || root.versionQueue.length === 0) return
+    var m = root.versionQueue[0]
+    root.versionQueue = root.versionQueue.slice(1)
+    versionProc.member = m
+    versionProc.command = [root.cli, "version", "--host", m.host].concat(m.self ? ["--self"] : [])
+    versionProc.reply = ""
+    versionProc.running = true
+  }
+  Process {
+    id: versionProc
+    property var member: null
+    property string reply: ""
+    stdout: SplitParser { onRead: line => versionProc.reply = line }
+    onExited: (code, exitStatus) => {
+      var r = ({ ok: false, error: "no answer" })
+      try { r = JSON.parse(versionProc.reply) } catch (e) {}
+      var next = Object.assign({}, root.versions)
+      next[versionProc.member.host] = r.ok ? { version: r.version, protocol: r.protocol } : { error: r.error }
+      root.versions = next
+      root.nextVersion()
+    }
+  }
+
+  // The upgrade of one node: the installer's own output, line by line, kept as the last few lines.
+  property bool updating: false
+  property string updateHost: ""
+  property string updateLog: ""
+  property bool updateFailed: false
+  function update(member, version) {
+    if (root.updating) return
+    root.updating = true
+    root.updateHost = member.host
+    root.updateLog = ""
+    root.updateFailed = false
+    updateProc.member = member
+    updateProc.command = [root.cli, "update", "--host", member.host].concat(member.self ? ["--self"] : [],
+      version !== "" ? ["--version", version] : [])
+    updateProc.running = true
+  }
+  Process {
+    id: updateProc
+    property var member: null
+    stdout: SplitParser {
+      onRead: line => {
+        var lines = (root.updateLog === "" ? [] : root.updateLog.split("\n")).concat([line.replace(/^install: /, "")])
+        root.updateLog = lines.slice(-8).join("\n")
+      }
+    }
+    onExited: (code, exitStatus) => {
+      root.updating = false
+      root.updateFailed = code !== 0
+      var host = updateProc.member.host
+      // Said as a notification too: the window may have been closed while the installer ran.
+      Quickshell.execDetached(["notify-send", "-a", "StartFS", code === 0 ? "Node updated" : "Node update failed",
+        host + (code === 0 ? "" : ": " + root.updateLog.split("\n").slice(-1)[0])])
+      var next = Object.assign({}, root.versions)
+      delete next[host]
+      root.versions = next
+      root.refresh()
+      root.checkVersions(false)
+    }
+  }
+  // The members arrive with the first status read; their versions are read once they do, and again when the window opens.
+  onStatusChanged: if (root.shown && !root.updating) root.checkVersions(false)
+
   // ---- applying a setting -----------------------------------------------------------------
   // Everything goes through `startfsgui set`, which checks the value before the daemon sees it and answers {ok} or {ok:false,error}.
   function apply(key, value) {
@@ -105,6 +185,7 @@ Item {
     root.setupOpen = false
     root.targetScreen = root.focusedScreen()
     root.refresh()
+    root.checkVersions(true)
     root.shown = true
     Qt.callLater(function () { managerView.focusList() })
   }
