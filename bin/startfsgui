@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# StartFSGUI: the command-line half of the plugin. Service.qml calls it for everything, so the QML never builds a `startfs`
+# command line itself and demo mode (lib/demo.sh) can stand in for the real daemon.
+
+set -euo pipefail
+
+SG_HOME="$(cd -- "$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")/.." && pwd)"
+readonly SG_HOME
+readonly CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/startfsgui"
+
+# shellcheck source=/dev/null
+source "$SG_HOME/lib/common.sh"
+if [[ ${STARTFSGUI_DEMO:-} == 1 || -f $CONFIG_DIR/demo/ENABLED ]]; then
+  # shellcheck source=/dev/null
+  source "$SG_HOME/lib/demo.sh"
+fi
+
+usage() {
+  cat <<'USAGE'
+Usage: startfsgui <command>
+
+  status                      what `startfs status` prints (the plugin parses it)
+  set offer SIZE              space this node offers, like 500M, 10G, 2T (0 = pure client)
+  set copies N                copies of every chunk, for the whole filesystem (1 to 9)
+Demo:  STARTFSGUI_DEMO=1 runs every command on a fixture, touching nothing real (used by the test session)
+USAGE
+}
+
+case "${1:-}" in
+  status) cmd_status ;;
+  set) shift; cmd_set "$@" ;;
+  -h | --help | help | "") usage ;;
+  *) echo "startfsgui: unknown command '$1'" >&2; usage >&2; exit 2 ;;
+esac

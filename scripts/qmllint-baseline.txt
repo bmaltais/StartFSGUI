@@ -1,0 +1,48 @@
+BarWidget.qml	import	BarIconButton was not found. Did you add all imports and dependencies?
+BarWidget.qml	import	Failed to import qs.Commons. Are your import paths set up properly?
+BarWidget.qml	import	Failed to import qs.Ui. Are your import paths set up properly?
+BarWidget.qml	import	Warnings occurred while importing module "qs.Commons":
+BarWidget.qml	import	Warnings occurred while importing module "qs.Ui":
+BarWidget.qml	inheritance-cycle	BarWidget is part of an inheritance cycle: BarWidget -> BarWidget
+BarWidget.qml	missing-property	Member "urgent" not found on type "QQuickColor"
+BarWidget.qml	type-instantiated-recursively	Type "BarWidget" can't be instantiated recursively
+BarWidget.qml	unqualified	anchors
+BarWidget.qml	unqualified	parent
+BarWidget.qml	unresolved-type	Type BarWidget is used but it is not resolved
+BarWidget.qml	unresolved-type	Type anchors is used but it is not resolved
+Chip.qml	missing-property	Member "accent" not found on type "QQuickColor"
+Chip.qml	missing-property	Member "foreground" not found on type "QQuickColor"
+Chip.qml	unqualified	Style
+Chip.qml	unqualified	Util
+EntryText.qml	missing-property	Member "muted" not found on type "QQuickColor"
+Field.qml	missing-property	Member "accent" not found on type "QQuickColor"
+Field.qml	missing-property	Member "foreground" not found on type "QQuickColor"
+Field.qml	unqualified	Style
+Field.qml	unqualified	Util
+ManagerView.qml	import	Button was not found. Did you add all imports and dependencies?
+ManagerView.qml	missing-property	Member "accent" not found on type "QQuickColor"
+ManagerView.qml	missing-property	Member "foreground" not found on type "QQuickColor"
+ManagerView.qml	missing-property	Member "muted" not found on type "QQuickColor"
+ManagerView.qml	missing-property	Member "urgent" not found on type "QQuickColor"
+ManagerView.qml	unqualified	Style
+ManagerView.qml	unqualified	modelData
+ManagerView.qml	unqualified	view
+ScrollTrack.qml	missing-property	Member "foreground" not found on type "QQuickColor"
+ScrollTrack.qml	unqualified	Style
+ScrollTrack.qml	unqualified	Util
+Service.qml	missing-property	Member "foreground" not found on type "QQuickColor"
+Service.qml	missing-property	Member "menu" not found on type "QQuickColor"
+Service.qml	uncreatable-type	Type PanelWindow is not creatable.
+Service.qml	unqualified	Style
+Service.qml	unqualified	Util
+SettingsPill.qml	missing-property	Member "accent" not found on type "QQuickColor"
+SettingsPill.qml	missing-property	Member "foreground" not found on type "QQuickColor"
+SettingsPill.qml	missing-property	Member "menu" not found on type "QQuickColor"
+SettingsPill.qml	missing-property	Member "urgent" not found on type "QQuickColor"
+SettingsPill.qml	unqualified	Style
+SettingsPill.qml	unqualified	Util
+Switch.qml	missing-property	Member "accent" not found on type "QQuickColor"
+Switch.qml	missing-property	Member "foreground" not found on type "QQuickColor"
+Switch.qml	missing-property	Member "menu" not found on type "QQuickColor"
+Switch.qml	unqualified	Style
+Switch.qml	unqualified	Util

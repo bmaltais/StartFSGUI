@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "id": "io.github.bmaltais.startfsgui",
+  "name": "StartFSGUI",
+  "version": "0.1.0",
+  "author": "Bernard Maltais",
+  "license": "MIT",
+  "description": "See whether your StartFS data is safe and configure this node (space offered, number of copies) from the Omarchy shell.",
+  "kinds": [
+    "service",
+    "bar-widget"
+  ],
+  "keepLoaded": true,
+  "entryPoints": {
+    "service": "Service.qml",
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "StartFS",
+    "description": "Open the StartFS manager from the bar; the icon turns red when your data is not safe.",
+    "category": "System",
+    "aliases": ["startfs", "filesystem", "storage"],
+    "allowMultiple": false,
+    "defaultSection": "right",
+    "defaults": {},
+    "schema": []
+  },
+  "homepage": "https://github.com/bmaltais/StartFSGUI"
+}
