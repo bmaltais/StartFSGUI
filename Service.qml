@@ -1,8 +1,10 @@
-// StartFSGUI: see whether StartFS data is safe, and configure this node, from the Omarchy shell.
-// This file owns the state, every call to bin/startfsgui, the IPC entry points and the window. ManagerView.qml draws what is in it.
+// StartFSGUI: see whether StartFS data is safe, and look after every node of the filesystem, from the Omarchy shell.
+// This file owns the state, every call to bin/startfsgui, the IPC entry points and the windows. ManagerView.qml (the list of
+// nodes), NodeView.qml (one node's window) and SetupView.qml (the StartFS window) draw what is in it.
 //
-//   omarchy-shell io.github.bmaltais.startfsgui open       toggle the manager
-//   omarchy-shell io.github.bmaltais.startfsgui refresh    read the status again
+//   omarchy-shell io.github.bmaltais.startfsgui open        toggle the manager
+//   omarchy-shell io.github.bmaltais.startfsgui node HOST   open one node's window
+//   omarchy-shell io.github.bmaltais.startfsgui refresh     read the status again
 import QtQuick
 import QtQuick.Effects
 import Quickshell
@@ -25,165 +27,241 @@ Item {
 
   property bool shown: false
   property var targetScreen: null
-  // The settings window floats over the manager rather than replacing it.
+  // The windows over the manager: the StartFS window (setupOpen) or one node's (nodeOpen). Only one at a time; the manager
+  // stays behind it.
   property bool setupOpen: false
-  readonly property bool settingsOverlay: root.setupOpen && root.integLoaded
+  property bool nodeOpen: false
+  property string setupPage: ""             // the page the StartFS window opens on, by title
+  property string nodePage: "Status"        // the same for a node's window
+  readonly property bool settingsOverlay: (root.setupOpen && root.integLoaded) || root.nodeOpen
   function closeSetup() { root.setupOpen = false; Qt.callLater(function () { managerView.focusList() }) }
-  function closeOverlay() { root.closeSetup() }
+  function closeNode() { root.nodeOpen = false; root.watchActivity(false); Qt.callLater(function () { managerView.focusList() }) }
+  function closeOverlay() { if (root.nodeOpen) root.closeNode(); else root.closeSetup() }
 
   // ---- the filesystem ------------------------------------------------------------------
   property var status: Model.parseStatus("")
   readonly property string health: Model.health(root.status)
+  readonly property var progress: Model.upgradeProgress(root.status)
   property bool loaded: false               // the first read has finished, so the window never opens empty
-  property bool busy: false                 // a setting is being applied
-  property string notice: ""
-  property bool noticeIsError: false
-  property string lastKey: ""               // the node setting the notice is about
 
   function refresh() { if (!statusProc.running) statusProc.running = true }
+  function refreshAll() { root.refresh(); root.refreshStats(); root.checkLatest(false) }
 
-  // The window reads fast while it is open; the bar icon needs only a slow look.
-  Timer { interval: root.shown ? 5000 : 30000; running: true; repeat: true; onTriggered: root.refresh() }
+  // The window reads fast while it is open, faster while an upgrade moves; the bar icon needs only a slow look.
+  Timer {
+    interval: root.shown ? (root.progress !== null ? 2000 : 5000) : (root.progress !== null ? 10000 : 30000)
+    running: true; repeat: true; onTriggered: root.refresh()
+  }
 
   Process {
     id: statusProc
     command: [root.cli, "status"]
     stdout: StdioCollector {
-      onStreamFinished: { root.status = Model.parseStatus(text); root.loaded = true }
+      onStreamFinished: {
+        var s = Model.parseStatus(text)
+        // While an upgrade restarts this node the daemon is briefly away: the last answer stays rather than an empty one.
+        if (!s.ok && root.progress !== null && root.status.ok) return
+        root.status = s
+        root.loaded = true
+      }
     }
     // A daemon that is not running prints nothing useful: the status stays "unknown", which the window says plainly.
-    onExited: (code, status) => { if (code !== 0) { root.status = Model.parseStatus(""); root.loaded = true } }
-  }
-
-  // ---- node versions and upgrades -----------------------------------------------------------
-  // host -> { version, protocol } once read, or { error } when the node could not be asked. Read over ssh, one node at a time.
-  property var versions: ({})
-  property var versionQueue: []
-  function checkVersions(force) {
-    var queue = []
-    root.status.members.forEach(function (m) {
-      if (m.state !== "up" && !m.self) return
-      if (!force && root.versions[m.host] !== undefined) return
-      queue.push(m)
-    })
-    root.versionQueue = queue
-    root.nextVersion()
-  }
-  function nextVersion() {
-    if (versionProc.running || root.versionQueue.length === 0) return
-    var m = root.versionQueue[0]
-    root.versionQueue = root.versionQueue.slice(1)
-    versionProc.member = m
-    versionProc.command = [root.cli, "version", "--host", m.host].concat(m.self ? ["--self"] : [])
-    versionProc.reply = ""
-    versionProc.running = true
-  }
-  Process {
-    id: versionProc
-    property var member: null
-    property string reply: ""
-    stdout: SplitParser { onRead: line => versionProc.reply = line }
-    onExited: (code, exitStatus) => {
-      var r = ({ ok: false, error: "no answer" })
-      try { r = JSON.parse(versionProc.reply) } catch (e) {}
-      var next = Object.assign({}, root.versions)
-      next[versionProc.member.host] = r.ok ? { version: r.version, protocol: r.protocol } : { error: r.error }
-      root.versions = next
-      root.nextVersion()
+    onExited: (code, status) => {
+      if (code === 0) return
+      if (root.progress === null || !root.status.ok) root.status = Model.parseStatus("")
+      root.loaded = true
     }
   }
 
-  // Every member's storage figures (builds that have `startfs stats`): host -> what its row shows. It asks every member right
-  // then, so it runs when the window opens and when asked to look again, not on every poll. An older startfs fails and the
-  // rows just have no figures.
+  // Every member's storage figures (`startfs stats`): host -> what its row shows. It asks every member right then, so it runs
+  // when the window opens, on "look again" and every 30 s while the window is open, never on the fast poll.
   property var nodeStats: ({})
+  readonly property bool statsBusy: statsProc.running
   function refreshStats() { if (!statsProc.running) statsProc.running = true }
+  Timer { interval: 30000; running: root.shown; repeat: true; onTriggered: root.refreshStats() }
   Process {
     id: statsProc
     command: [root.cli, "stats"]
     stdout: StdioCollector {
-      onStreamFinished: root.nodeStats = Model.parseNodeStats(text, root.status.copies)
+      onStreamFinished: { var n = Model.parseNodeStats(text, root.status.copies); if (Object.keys(n).length) root.nodeStats = n }
     }
-    onExited: (code, exitStatus) => { if (code !== 0) root.nodeStats = ({}) }
   }
 
-  // The upgrade of one node: the installer's own output, line by line, kept as the last few lines.
-  property bool updating: false
-  property string updateHost: ""
-  property string updateLog: ""             // the same lines, joined, for the notification
-  property var updateLines: []
-  property bool updateFailed: false
-  function update(member, version) {
-    if (root.updating) return
-    root.updating = true
-    root.updateHost = member.host
-    root.updateLog = ""
-    root.updateLines = []
-    root.updateFailed = false
-    updateProc.member = member
-    updateProc.command = [root.cli, "update", "--host", member.host].concat(member.self ? ["--self"] : [],
-      version !== "" ? ["--version", version] : [])
-    updateProc.running = true
+  // This node's counters (`startfs activity`), read every 5 s while its Activity page is shown.
+  property var activity: null
+  readonly property bool activityBusy: activityProc.running
+  property bool activityWatched: false
+  function watchActivity(on) { root.activityWatched = on; if (on && !activityProc.running) activityProc.running = true }
+  Timer { interval: 5000; running: root.activityWatched; repeat: true; onTriggered: if (!activityProc.running) activityProc.running = true }
+  Process {
+    id: activityProc
+    command: [root.cli, "activity"]
+    stdout: StdioCollector { onStreamFinished: root.activity = Model.parseActivity(text) }
+  }
+
+  // The newest StartFS release on GitHub (cached by the CLI for 6 hours): what the header offers to upgrade to.
+  property string latest: ""
+  property string latestError: ""
+  readonly property bool latestBusy: latestProc.running
+  function checkLatest(force) {
+    if (latestProc.running) return
+    latestProc.command = [root.cli, "latest"].concat(force ? ["--refresh"] : [])
+    latestProc.running = true
   }
   Process {
-    id: updateProc
-    property var member: null
+    id: latestProc
+    stdout: StdioCollector {
+      onStreamFinished: {
+        var r = ({ ok: false, error: "no answer" })
+        try { r = JSON.parse(text) } catch (e) {}
+        if (r.ok) { root.latest = r.release; root.latestError = "" }
+        else root.latestError = "GitHub could not be asked: " + (r.error || "no answer")
+      }
+    }
+  }
+
+  // ---- doing things: one command at a time, each with what to say when it ends -------------------------
+  // Every change goes through the CLI, which checks the value before StartFS sees it and answers {ok, message, warning} or
+  // {ok:false, error}. What it said goes under the control that asked (lastKey), and in the manager's footer.
+  property bool busy: actProc.running
+  property string busyHost: ""              // the node a row shows as working
+  property string notice: ""
+  property bool noticeIsError: false
+  property string lastKey: ""               // what the notice is about: "copies", "upgrade", "purge", or "<host>:<setting>"
+  property var actQueue: []
+  function say(key, isError, text) { root.lastKey = key; root.noticeIsError = isError; root.notice = text }
+  function run(args, key, host, okText) {
+    root.actQueue = root.actQueue.concat([{ args: args, key: key, host: host || "", okText: okText || "" }])
+    root.runNext()
+  }
+  function runNext() {
+    if (actProc.running || root.actQueue.length === 0) return
+    var job = root.actQueue[0]
+    root.actQueue = root.actQueue.slice(1)
+    actProc.job = job
+    actProc.reply = ""
+    actProc.err = ""
+    actProc.command = [root.cli].concat(job.args)
+    root.busyHost = job.host
+    root.lastKey = job.key
+    actProc.running = true
+  }
+  Process {
+    id: actProc
+    property var job: null
+    property string reply: ""
+    property string err: ""
+    stdout: SplitParser { onRead: line => actProc.reply = line }
+    stderr: SplitParser { onRead: line => { if (actProc.err === "") actProc.err = line.replace(/^startfsgui: /, "") } }
+    onExited: (code, exitStatus) => {
+      var r = ({ ok: false, error: actProc.err !== "" ? actProc.err : "exit code " + code })
+      try { r = JSON.parse(actProc.reply) } catch (e) {}
+      var job = actProc.job
+      root.busyHost = ""
+      root.say(job.key, !r.ok, r.ok ? (r.warning || job.okText || r.message || "Done.") : r.error)
+      root.refresh()
+      root.runNext()
+    }
+  }
+  Timer { id: noticeTimer; interval: 8000; onTriggered: root.notice = "" }
+  onNoticeChanged: if (root.notice !== "") noticeTimer.restart()
+
+  // A node's own setting: here with `startfs config`, on another node over ssh.
+  function apply(member, key, value) {
+    root.run(["set", key, String(value)].concat(member.self ? [] : ["--host", member.host]), member.host + ":" + key, "", "Saved.")
+  }
+  // A setting of the whole filesystem (copies), asked of this node's daemon.
+  function applyCluster(key, value) { root.run(["set", key, String(value)], key, "", "Saved.") }
+  function startUpgrade(tag) { root.run(["upgrade"].concat(tag !== "" ? [tag] : []), "upgrade", "") }
+  function forceUpgrade() {
+    var me = root.status.members.filter(function (m) { return m.self })[0]
+    root.run(["upgrade", "--force"], (me ? me.host : "") + ":force", me ? me.host : "", "Restarting on the new release.")
+  }
+  function removeMember(m) { root.run(["remove", m.id], m.host + ":remove", m.host, m.host + " was removed. Its copies are made again on the others.") }
+  function leave() {
+    var me = root.status.members.filter(function (m) { return m.self })[0]
+    root.run(["leave"], (me ? me.host : "") + ":leave", me ? me.host : "")
+  }
+  function purge() { root.run(["purge"], "purge", "") }
+  function openLogs() { Quickshell.execDetached([root.cli, "logs"]) }
+
+  // ---- inviting a node: a join command to run on the new machine ----------------------------------
+  property string inviteCommand: ""
+  property string inviteError: ""
+  property bool inviteCopied: false
+  function makeInvite() {
+    root.inviteCommand = ""
+    root.inviteError = ""
+    root.inviteCopied = false
+    if (!inviteProc.running) inviteProc.running = true
+  }
+  function copyInvite() { if (root.inviteCommand !== "") { Quickshell.clipboardText = root.inviteCommand; root.inviteCopied = true } }
+  Process {
+    id: inviteProc
+    command: [root.cli, "invite"]
+    stdout: StdioCollector {
+      onStreamFinished: {
+        var r = ({ ok: false, error: "no answer" })
+        try { r = JSON.parse(text) } catch (e) {}
+        if (r.ok) { root.inviteCommand = r.command; root.copyInvite() }
+        else root.inviteError = "No invitation: " + (r.error || "no answer")
+      }
+    }
+  }
+
+  // ---- reinstalling one node: StartFS's installer, for a node older than 1.10 or one that does not start ---------------
+  property bool installing: installProc.running
+  property string installHost: ""           // while it runs
+  property string installHostLast: ""       // the node the lines below are about
+  property var installLines: []
+  property bool installFailed: false
+  function install(member, release) {
+    if (installProc.running) return
+    root.installHost = member.host
+    root.installHostLast = member.host
+    root.installLines = []
+    root.installFailed = false
+    installProc.command = [root.cli, "install", "--host", member.host].concat(member.self ? ["--self"] : [],
+      /^v[0-9]+\.[0-9]+\.[0-9]+$/.test(release) ? ["--version", release] : [])
+    installProc.running = true
+  }
+  Process {
+    id: installProc
     stdout: SplitParser {
       onRead: line => {
-        // One tidy line each: the installer's long, indented sentences would otherwise wrap past the card.
+        // One tidy line each: the installer's long, indented sentences would otherwise wrap past the window.
         var tidy = line.replace(/^install: /, "").replace(/\s+/g, " ").trim()
-        if (tidy === "") return
-        var lines = root.updateLines.concat([tidy]).slice(-6)
-        root.updateLines = lines
-        root.updateLog = lines.join("\n")
+        if (tidy !== "") root.installLines = root.installLines.concat([tidy]).slice(-6)
       }
     }
     onExited: (code, exitStatus) => {
-      root.updating = false
-      root.updateFailed = code !== 0
-      var host = updateProc.member.host
+      var host = root.installHost
+      root.installHost = ""
+      root.installFailed = code !== 0
       // Said as a notification too: the window may have been closed while the installer ran.
-      Quickshell.execDetached(["notify-send", "-a", "StartFS", code === 0 ? "Node updated" : "Node update failed",
-        host + (code === 0 ? "" : ": " + root.updateLog.split("\n").slice(-1)[0])])
-      var next = Object.assign({}, root.versions)
-      delete next[host]
-      root.versions = next
-      root.refresh()
-      root.refreshStats()
-      root.checkVersions(false)
+      Quickshell.execDetached(["notify-send", "-a", "StartFS", code === 0 ? "StartFS reinstalled" : "Reinstall failed",
+        host + (code === 0 ? "" : ": " + root.installLines.slice(-1)[0])])
+      root.refreshAll()
     }
   }
-  // The members arrive with the first status read; their versions are read once they do, and again when the window opens.
-  onStatusChanged: if (root.shown && !root.updating) root.checkVersions(false)
 
-  // ---- applying a setting -----------------------------------------------------------------
-  // Everything goes through `startfsgui set`, which checks the value before the daemon sees it and answers {ok} or {ok:false,error}.
-  function apply(key, value) {
-    if (root.busy) return
-    root.lastKey = key
-    setProc.pendingKey = key
-    setProc.command = [root.cli, "set", key, String(value)]
-    setProc.reply = ""
-    root.busy = true
-    setProc.running = true
+  // ---- news, said as a notification when the manager is closed --------------------------------------
+  property string lastHealth: ""
+  onHealthChanged: {
+    if (root.loaded && root.health === "degraded" && root.lastHealth === "safe" && !root.shown)
+      Quickshell.execDetached(["notify-send", "-a", "StartFS", "-u", "critical", "StartFS: " + Model.headline(root.status),
+        "Open the manager to see which node."])
+    if (root.health !== "unknown") root.lastHealth = root.health
   }
-  Process {
-    id: setProc
-    property string pendingKey: ""
-    property string reply: ""
-    stdout: SplitParser { onRead: line => setProc.reply = line }
-    stderr: SplitParser { onRead: line => { if (setProc.reply === "") setProc.reply = JSON.stringify({ ok: false, error: line }) } }
-    onExited: (code, exitStatus) => {
-      var r = ({ ok: false, error: "exit code " + code })
-      try { r = JSON.parse(setProc.reply) } catch (e) {}
-      root.busy = false
-      root.noticeIsError = !r.ok
-      root.notice = r.ok ? "Saved." : r.error
-      root.refresh()
-    }
+  property var lastProgress: null
+  onProgressChanged: {
+    var was = root.lastProgress
+    root.lastProgress = root.progress
+    if (was !== null && root.progress === null && root.status.ok)
+      Quickshell.execDetached(["notify-send", "-a", "StartFS", "Upgrade finished", "Every node runs " + was.target + "."])
+    else if (root.progress && root.progress.failed.length && !(was && was.failed.length))
+      Quickshell.execDetached(["notify-send", "-a", "StartFS", "-u", "critical", "Upgrade stopped", root.progress.text])
   }
-  Timer { id: noticeTimer; interval: 6000; onTriggered: root.notice = "" }
-  onNoticeChanged: if (root.notice !== "") noticeTimer.restart()
 
   // ---- the bar icon's status ---------------------------------------------------------------
   readonly property string statusDir: (Quickshell.env("XDG_CACHE_HOME") || Quickshell.env("HOME") + "/.cache") + "/startfsgui"
@@ -191,9 +269,9 @@ Item {
   Process { running: true; command: ["mkdir", "-p", root.statusDir]; onExited: root.statusDirReady = true }
   FileView { id: statusFile; path: root.statusDir + "/status"; printErrors: false; atomicWrites: true }
   function writeStatus() { if (root.statusDirReady && root.loaded) statusFile.setText(root.health) }
-  onHealthChanged: root.writeStatus()
   onLoadedChanged: root.writeStatus()
   onStatusDirReadyChanged: root.writeStatus()
+  Connections { target: root; function onHealthChanged() { root.writeStatus() } }
 
   // ---- showing and hiding -------------------------------------------------------------------
   function focusedScreen() {
@@ -204,30 +282,61 @@ Item {
   }
   function show() {
     root.setupOpen = false
+    root.nodeOpen = false
     root.targetScreen = root.focusedScreen()
-    root.refresh()
-    root.refreshStats()
-    root.checkVersions(true)
+    root.refreshAll()
     root.shown = true
     Qt.callLater(function () { managerView.focusList() })
   }
-  function close() { root.setupOpen = false; root.shown = false }
-  // The manager stays behind the settings window: opened first when it was not already showing.
-  function showSetup() {
+  function close() { root.setupOpen = false; root.closeNode(); root.shown = false }
+  // The manager stays behind the windows over it: opened first when it was not already showing.
+  function showManagerBehind() {
+    if (root.shown) return
+    root.targetScreen = root.focusedScreen()
+    root.refreshAll()
+    root.shown = true
+  }
+  function showSetup(page) {
     root.integLoaded = false
-    if (!root.shown) { root.targetScreen = root.focusedScreen(); root.refresh(); root.shown = true }
+    root.nodeOpen = false
+    root.setupPage = page || ""
+    root.showManagerBehind()
     root.setupOpen = true
     integProc.running = true
+  }
+  // One node's window. It follows the member by its number across reads; `nodeFallback` is what it was when opened.
+  property string nodeId: ""
+  property var nodeFallback: ({})
+  readonly property var nodeMember: {
+    var id = root.nodeId
+    var found = root.status.members.filter(function (m) { return m.id === id })[0]
+    return found || root.nodeFallback
+  }
+  function showNode(member, page) {
+    root.setupOpen = false
+    root.nodeOpen = false
+    root.nodeId = member.id
+    root.nodeFallback = member
+    root.nodePage = page || "Status"
+    root.showManagerBehind()
+    root.nodeOpen = true
+    root.refreshStats()
   }
   function skipSetup() { skipProc.running = true; root.closeSetup() }
   IpcHandler {
     target: "io.github.bmaltais.startfsgui"
     function state(): string { return JSON.stringify(root.status) }
-    function refresh(): string { root.refresh(); return "ok" }
+    function refresh(): string { root.refreshAll(); return "ok" }
     function open(): void { if (root.shown) root.close(); else root.show() }
     function toggle(): void { if (root.shown) root.close(); else root.show() }
     function close(): void { root.close() }
-    function setup(): void { root.showSetup() }
+    function setup(): void { root.showSetup("") }
+    function node(host: string): string {
+      var m = root.status.members.filter(function (x) { return x.host === host || x.fqdn === host })[0]
+      if (!m) return "no node " + host
+      root.showNode(m, "Status")
+      return "ok"
+    }
   }
 
   // ---- the settings: launcher entry, command line, bar icon, window memory -----------------
@@ -263,7 +372,7 @@ Item {
         // The one-time offer only opens the window when setup has not been answered yet.
         if (root.offerSetup) {
           root.offerSetup = false
-          if (info.cli && !info.done) { root.showSetup(); return }
+          if (info.cli && !info.done) { root.showSetup("General"); return }
         }
         root.integLoaded = true
       }
@@ -541,7 +650,8 @@ Item {
       anchors.horizontalCenterOffset: win.sDragX
       anchors.verticalCenterOffset: win.sDragY
       width: win.sSizeW > 0 ? win.sSizeW : Style.space(760)
-      height: win.sSizeH > 0 ? win.sSizeH : Math.min(setupLoader.item ? (setupLoader.item as Item).implicitHeight : 0, (win.screen ? win.screen.height : 900) - Style.space(80))
+      readonly property Item content: root.nodeOpen ? nodeLoader.item as Item : setupLoader.item as Item
+      height: win.sSizeH > 0 ? win.sSizeH : Math.min(setupFrame.content ? setupFrame.content.implicitHeight : 0, (win.screen ? win.screen.height : 900) - Style.space(80))
       radius: root.radius
       color: Color.menu.background
       border.width: Style.normalBorderWidth
@@ -578,6 +688,13 @@ Item {
         anchors.fill: parent
         active: root.setupOpen
         sourceComponent: SetupView { svc: setupLoader.owner }
+      }
+      Loader {
+        id: nodeLoader
+        property var owner: root
+        anchors.fill: parent
+        active: root.nodeOpen
+        sourceComponent: NodeView { svc: nodeLoader.owner }
       }
 
       // Resize handle in the bottom-right corner, as on the manager.

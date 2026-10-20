@@ -23,29 +23,61 @@ usage() {
   cat <<'USAGE'
 Usage: startfsgui <command>
 
-  status                      what `startfs status` prints (the plugin parses it)
-  version --host H [--self]   the startfs installed on a node, as JSON (over ssh unless --self)
-  update --host H [--self] [--version vX.Y.Z]
-                              run the StartFS installer on a node (over ssh unless --self); latest release unless pinned
+Read (JSON on stdout):
+  status                      `startfs status --json`; an older startfs without --json gives its plain text instead
+  stats                       every member's storage figures (`startfs stats --json`)
+  activity                    this node's last minute of traffic, ticks and queues (`startfs activity --json`)
+  latest [--refresh]          the newest stable StartFS release, {"ok":true,"release":"v1.10.3"}; asked of GitHub at most
+                              every 6 hours unless --refresh, and an older answer is kept when offline
+  logs                        open the daemon's log (journalctl --user -u startfs -f) in a terminal of its own
+  version --host H [--self]   the startfs installed on a node, {ok, version, protocol} (over ssh unless --self)
+
+Change (each prints {"ok":true,...} or {"ok":false,"error":"..."}):
+  set KEY VALUE [--host H]    KEY is one of
+                                offer     space offered, a whole number with an optional unit (500M, 10G, 2T, KiB ...); 0 = pure client
+                                weight    share of new copies, same sizes; 0 = follow the offer
+                                site      a name of up to 64 letters, digits . _ - ; empty clears it
+                                copies    copies of every chunk for the whole filesystem, 1 to 9 (this node only)
+                                activity  on | off, the traffic counters (this node only)
+                              --host H sets offer, weight or site on another node over ssh
+  upgrade [vX.Y.Z]            move the whole cluster to a release (newest unless named); the members then stage and restart
+  upgrade --force             restart this node on the staged release although its mount is in use
+  remove N                    drop member N, which must be gone for good
+  leave                       this node hands its data over and leaves the filesystem
+  purge                       free deleted files' data on every member now (not undoable; every member must be up)
+  invite [--copy]             {"ok":true,"command":"startfs join ..."}; --copy also puts it on the clipboard (adds copied)
+
+Fallback installer (a node older than 1.10.0, a broken node, a reinstall):
+  install --host H [--self] [--version vX.Y.Z]
+                              run StartFS's installer on a node (over ssh unless --self), its output line by line
+
+This plugin:
   integration                 what is switched on, as JSON
   setup [--launcher B] [--cli B] [--bar-icon B] [--remember-size B] [--remember-position B] [--done] [--json]
                               switch the app launcher entry, command-line link and bar icon
   window [--size WxH] [--offset X,Y] [--reset] [--setup-size WxH] [--setup-offset X,Y] [--reset-setup]
                               where the windows were left; no option prints them as JSON
   ui                          show or hide the manager window
-  stats                       every member's storage figures, as JSON (builds that have `startfs stats`)
-  set offer SIZE              space this node offers, like 500M, 10G, 2T (0 = pure client)
-  set copies N                copies of every chunk, for the whole filesystem (1 to 9)
-Demo:  STARTFSGUI_DEMO=1 runs every command on a fixture, touching nothing real (used by the test session)
+
+Demo:  STARTFSGUI_DEMO=1 runs every command on a fixture cluster, touching nothing real (used by the test session);
+       `rm -rf ~/.config/startfsgui/demo` puts it back as it was
 USAGE
 }
 
 case "${1:-}" in
   status) cmd_status ;;
   stats) cmd_stats ;;
+  activity) cmd_activity ;;
+  logs) cmd_logs ;;
+  latest) shift; cmd_latest "$@" ;;
   set) shift; cmd_set "$@" ;;
+  upgrade) shift; cmd_upgrade "$@" ;;
+  remove) shift; cmd_remove "$@" ;;
+  leave) cmd_leave ;;
+  purge) cmd_purge ;;
+  invite) shift; cmd_invite "$@" ;;
   version) shift; cmd_version "$@" ;;
-  update) shift; cmd_update "$@" ;;
+  install | update) shift; cmd_install "$@" ;;
   integration) cmd_integration ;;
   setup) shift; cmd_setup "$@" ;;
   window) shift; cmd_window "$@" ;;

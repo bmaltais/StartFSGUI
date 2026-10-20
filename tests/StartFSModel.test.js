@@ -5,7 +5,7 @@ const path = require("node:path")
 
 // StartFSModel.js is a QML library; load it as a plain script.
 const source = fs.readFileSync(path.join(__dirname, "..", "StartFSModel.js"), "utf8").replace(/^\.pragma.*$/m, "")
-const M = new Function(source + "\nreturn { bytes, formatBytes, parseStatus, parseNodeStats, health, headline, validSize }")()
+const M = new Function(source + "\nreturn { bytes, formatBytes, parseStatus, parseNodeStats, health, headline, validSize, validSite, sizeInput, compareRelease, clusterRelease, upgradeProgress, memberLine, stateTone, parseActivity, rttText, durationText }")()
 
 const REAL = `data: SAFE
 filesystem: home (3 copies)
@@ -47,8 +47,9 @@ test("empty output is unknown", () => {
 })
 
 test("size grammar", () => {
-  for (const ok of ["0", "500M", "10G", "2T", "1.5GiB"]) assert.ok(M.validSize(ok), ok)
-  for (const bad of ["", "G", "10 G", "-1", "10X"]) assert.ok(!M.validSize(bad), bad)
+  for (const ok of ["0", "500M", "10G", "2T", "10GiB", "10gb", "512B"]) assert.ok(M.validSize(ok), ok)
+  // startfs config reads whole numbers only since 1.5.9.
+  for (const bad of ["", "G", "10 G", "-1", "10X", "1.5GiB"]) assert.ok(!M.validSize(bad), bad)
 })
 
 test("bytes", () => { assert.strictEqual(M.bytes("1.0 GiB"), 1073741824); assert.strictEqual(M.bytes("x"), null) })
@@ -87,8 +88,9 @@ test("parses status --json into the same shape as the text", () => {
 
 test("repair shows in the headline", () => {
   const j = JSON.parse(JSON_STATUS)
+  j.verdict = "Degraded"
   j.repair = { at_risk: 1, degraded: 2 }
-  assert.strictEqual(M.headline(M.parseStatus(JSON.stringify(j))), "Safe, repairing 3 chunks")
+  assert.strictEqual(M.headline(M.parseStatus(JSON.stringify(j))), "Repairing 3 chunks")
 })
 
 test("no filesystem or broken JSON is unknown", () => {
@@ -159,4 +161,98 @@ test("node stats: shares, compression and a member that did not answer", () => {
 test("node stats: nonsense is empty, not an error", () => {
   assert.deepStrictEqual(M.parseNodeStats("not json", 3), {})
   assert.deepStrictEqual(M.parseNodeStats('{"a":1}', 3), {})
+})
+
+// ---- StartFS 1.10: releases, sites, round trips, cluster upgrades --------------------------------------------------------
+const live = () => JSON.parse(fs.readFileSync(path.join(__dirname, "fixture-status-1.10.2.json"), "utf8"))
+
+test("1.10 members carry their site, release and round trip", () => {
+  const s = M.parseStatus(JSON.stringify(live()))
+  assert.strictEqual(s.ok, true)
+  assert.strictEqual(M.health(s), "safe")
+  const mini2 = s.members.find(m => m.host === "mini2")
+  assert.strictEqual(mini2.site, "home")
+  assert.strictEqual(mini2.release, "v1.10.2")
+  assert.strictEqual(mini2.protocol, 15)
+  assert.strictEqual(mini2.rtt, "5.2 ms")
+  assert.strictEqual(s.members.find(m => m.self).rtt, "")
+  assert.strictEqual(M.clusterRelease(s), "v1.10.2")
+  // A finished upgrade stays in status with complete: true; it is not progress.
+  assert.strictEqual(M.upgradeProgress(s), null)
+})
+
+test("unknown and upgrading members are not trouble; down ones are", () => {
+  const j = live()
+  j.members[0].state = "Unknown"
+  j.members[2].state = "Upgrading"
+  j.members[3].state = "Down"
+  j.members[3].last_seen = { secs_ago: 720, exact: true }
+  j.members[3].problem = "timed out"
+  const s = M.parseStatus(JSON.stringify(j))
+  assert.strictEqual(M.stateTone(s.members[0]), "quiet")
+  assert.strictEqual(M.stateTone(s.members[2]), "quiet")
+  assert.strictEqual(M.stateTone(s.members[3]), "bad")
+  assert.strictEqual(M.memberLine(s.members[3]), "last seen 12 min ago  ·  timed out")
+})
+
+test("a rolling upgrade under way, and one held by a busy mount", () => {
+  const j = live()
+  j.upgrade = { release: "v1.10.3", lockstep: false, go: false, complete: false, split: [] }
+  j.members.forEach(m => { m.upgrade = "Staged" })
+  j.members[0].release = "v1.10.3"; j.members[0].upgrade = null
+  j.members[2].upgrade = "Restarting"
+  let p = M.upgradeProgress(M.parseStatus(JSON.stringify(j)))
+  assert.strictEqual(p.target, "v1.10.3")
+  assert.strictEqual(p.done, 1)
+  assert.strictEqual(p.total, 7)
+  assert.match(p.text, /one node at a time/)
+  const s = M.parseStatus(JSON.stringify(j))
+  assert.match(M.memberLine(s.members[2], undefined, "v1.10.3"), /^restarting on v1.10.3/)
+  j.members[1].upgrade = "WaitingOnMount"
+  p = M.upgradeProgress(M.parseStatus(JSON.stringify(j)))
+  assert.strictEqual(p.waiting.length, 1)
+  assert.match(p.text, /3090 waits for its mount/)
+  j.members[4].upgrade = { Failed: "checksum mismatch" }
+  p = M.upgradeProgress(M.parseStatus(JSON.stringify(j)))
+  assert.match(p.text, /^Upgrade stopped: mini1 failed/)
+})
+
+test("releases compare as numbers", () => {
+  assert.strictEqual(M.compareRelease("v1.10.2", "v1.9.9"), 1)
+  assert.strictEqual(M.compareRelease("v1.10.2", "v1.10.2"), 0)
+  assert.strictEqual(M.compareRelease("", "v1.0.0"), -1)
+})
+
+test("size boxes show what startfs config reads back", () => {
+  assert.strictEqual(M.sizeInput(107374182400), "100G")
+  assert.strictEqual(M.sizeInput(0), "0")
+  assert.strictEqual(M.sizeInput(1536 * 1048576), "1536M")
+  assert.ok(M.validSite("home") && M.validSite("") && !M.validSite("my site"))
+})
+
+test("activity: rates over the window, and pressure when the kernel has it", () => {
+  const a = M.parseActivity(JSON.stringify({ enabled: true, window_secs: 60,
+    peers: [{ member: 0, addr: "mini2.example.ts.net:7600", state: "Online", in_flight: 2,
+              traffic: { sent: { chunk: { bytes: 61440, messages: 1 }, metadata: { bytes: 0, messages: 0 }, gossip: { bytes: 0, messages: 0 },
+                                 other: { bytes: 0, messages: 0 } },
+                         received: { chunk: { bytes: 0, messages: 0 }, metadata: { bytes: 0, messages: 0 }, gossip: { bytes: 6144, messages: 1 },
+                                     other: { bytes: 0, messages: 0 } }, acknowledged: 1, timed_out: 0, retried: 0 } }],
+    tick: { ticks: 10, avg_ms: 0.2, max_ms: 54, busy_fraction: 0.02 }, queue: { chunks: 0, oldest_secs: null },
+    structures: { decoded_cache: { entries: 1, bytes: 1048576, limit_bytes: 134217728 } },
+    resources: { rss_bytes: 95686656, cpu_secs: 29.7, threads: 9, cpu_pressure: { avg10: 0, avg60: 0.17 }, memory_pressure: null,
+                 io_pressure: null, written_bytes: 0 } }))
+  assert.strictEqual(a.out, "1.0 KiB/s")
+  assert.strictEqual(a.in, "102 B/s".replace("102", String(6144 / 60)))
+  assert.strictEqual(a.peers[0].host, "mini2")
+  assert.strictEqual(a.queue, "empty")
+  assert.strictEqual(a.memoryPressure, "not available")
+  assert.strictEqual(a.readCache, "1.0 MiB of 128.0 MiB")
+  assert.strictEqual(M.parseActivity("nope"), null)
+})
+
+test("a node that lags a release, with nothing to do, is not an upgrade under way", () => {
+  const j = live()
+  j.upgrade.complete = false
+  j.members[4].release = "v1.10.1"
+  assert.strictEqual(M.upgradeProgress(M.parseStatus(JSON.stringify(j))), null)
 })

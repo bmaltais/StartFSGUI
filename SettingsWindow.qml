@@ -4,16 +4,18 @@
 // when one changes.
 //
 //   pages   [{ title, fields: [field] }]
-//   field   { key, type: "bool" | "choice" | "text", label, hint,
+//   field   { key, type: "bool" | "choice" | "text" | "action" | "info", label, hint,
 //             options: [{ value, label }]   (choice)
 //             stacked: true                 (choice or text: the control goes under the label, full width)
 //             placeholder                   (text)
+//             buttonText, danger            (action: a button on the right; it emits changed(key, true) when clicked)
+//             text, tone: "bad"|"ok"|"muted"  (info: a read-only value on the right, or under the label when stacked)
 //             disabled: true                (dimmed, not clickable)
 //             note: { kind: "ok"|"bad"|"muted", text }   (a line of feedback under the control) }
 //   values  { key: value }
 //
-// Signals: changed(key, value) when a switch or choice is clicked, or a text is committed (Enter,
-// or the box losing focus with a new text); edited(key, text) on every keystroke in a text box.
+// Signals: changed(key, value) when a switch or choice is clicked, an action button is pressed, or a text is
+// committed (Enter, or the box losing focus with a new text); edited(key, text) on every keystroke in a text box.
 // Anything placed inside the window goes in the footer, on the right.
 import QtQuick
 import QtQuick.Layouts
@@ -27,6 +29,8 @@ Item {
   // A small-caps line under the title that says what the window is for ("SETTINGS", maybe more).
   property string subtitle: ""
   property string titleIcon: ""                  // a file path, or empty
+  property string titleGlyph: ""                 // an icon-font glyph, when there is no file (a drive's cloud)
+  property int initialPage: 0                    // the page reset() goes back to
   // The title block and the page heading beside it share one height.
   readonly property real headHeight: win.subtitle !== "" ? Style.space(48) : Style.space(40)
   property var pages: []
@@ -48,11 +52,11 @@ Item {
 
   implicitHeight: Style.space(520)
 
-  function reset() { win.page = 0; win.query = ""; search.text = "" }
+  function reset() { win.page = Math.max(0, Math.min(win.initialPage, win.pages.length - 1)); win.query = ""; search.text = "" }
 
   function matches(field) {
     var q = win.query.trim().toLowerCase()
-    return (field.label + " " + (field.hint || "")).toLowerCase().indexOf(q) !== -1
+    return (field.label + " " + (field.hint || "") + " " + (field.type === "info" ? field.text || "" : "")).toLowerCase().indexOf(q) !== -1
   }
   readonly property var shownGroups: {
     if (win.pages.length === 0) return []
@@ -82,9 +86,10 @@ Item {
       radius: height / 2
       color: Util.alpha(Color.foreground, 0.06)
       border.width: Style.normalBorderWidth
-      border.color: Util.alpha(Color.foreground, search.activeFocus ? 0.30 : 0.12)
+      border.color: Util.alpha(Color.foreground, search.focused ? 0.30 : 0.12)
 
       Text {
+
         textFormat: Text.PlainText
         id: glass
         anchors.left: parent.left
@@ -95,33 +100,21 @@ Item {
         font.family: Style.font.family
         font.pixelSize: Style.font.body
       }
-      TextInput {
+      EntryText {
         id: search
         anchors.fill: parent
         anchors.leftMargin: Style.spacing.xxxl + glass.width + Style.spacing.md
         anchors.rightMargin: Style.spacing.xxxl
-        verticalAlignment: TextInput.AlignVCenter
         color: Color.foreground
         selectionColor: Util.alpha(Color.accent, 0.4)
         font.family: Style.font.family
         font.pixelSize: Style.font.body
         maximumLength: 64
-        // Read-only until focused: an editable TextInput reads the clipboard on every
-        // change (to know if it can paste), so an idle one would fetch foreign text.
-        readOnly: !activeFocus
-        clip: true
+        placeholder: win.searchPlaceholder
         onTextChanged: if (win.query !== search.text) win.query = search.text
         // Escape clears a search first, then closes the window.
-        Keys.onEscapePressed: function (event) {
+        onEscapePressed: function (event) {
           if (search.text !== "") { search.text = ""; event.accepted = true } else event.accepted = false
-        }
-        Text {
-          textFormat: Text.PlainText
-          visible: search.text === ""
-          anchors.verticalCenter: parent.verticalCenter
-          text: win.searchPlaceholder
-          color: Color.muted
-          font: search.font
         }
       }
     }
@@ -156,9 +149,25 @@ Item {
         fillMode: Image.PreserveAspectFit
         asynchronous: true
       }
+      Text {
+        textFormat: Text.PlainText
+        id: titleGlyphText
+        visible: !titleImage.visible && win.titleGlyph !== ""
+        anchors.left: parent.left
+        anchors.verticalCenter: parent.verticalCenter
+        // At least 24. Icon-font glyphs draw wider than they advance, so a wide one (a desktop) is given a square of its
+        // own size rather than running into the name.
+        width: Math.max(Style.space(24), font.pixelSize * 1.5)
+        horizontalAlignment: Text.AlignHCenter
+        text: win.titleGlyph
+        color: Color.foreground
+        font.family: Style.font.family
+        font.pixelSize: Style.font.display
+      }
       Column {
-        anchors.left: titleImage.visible ? titleImage.right : parent.left
-        anchors.leftMargin: titleImage.visible ? Style.spacing.md : 0
+        readonly property bool lead: titleImage.visible || titleGlyphText.visible
+        anchors.left: titleImage.visible ? titleImage.right : titleGlyphText.visible ? titleGlyphText.right : parent.left
+        anchors.leftMargin: lead ? Style.spacing.md : 0
         anchors.right: parent.right
         anchors.verticalCenter: parent.verticalCenter
         Text {
@@ -279,6 +288,7 @@ Item {
       width: body.width
 
       Text {
+
         textFormat: Text.PlainText
         visible: win.searching && win.shownGroups.length === 0
         width: rows.width
@@ -376,6 +386,8 @@ Item {
                 anchors.verticalCenter: row.stacked ? undefined : parent.verticalCenter
                 anchors.verticalCenterOffset: row.stacked ? 0 : -row.noteHeight / 2
                 sourceComponent: row.field.type === "bool" ? switchEditor
+                  : row.field.type === "action" ? actionEditor
+                  : row.field.type === "info" ? infoEditor
                   : row.field.type === "text" ? textEditor
                   : row.stacked ? flowEditor : choiceEditor
                 onLoaded: {
@@ -391,6 +403,7 @@ Item {
               }
 
               Text {
+
                 textFormat: Text.PlainText
                 id: note
                 visible: !!(row.field.note && row.field.note.text)
@@ -444,6 +457,7 @@ Item {
     }
 
     Text {
+
       textFormat: Text.PlainText
       anchors.left: parent.left
       anchors.leftMargin: Style.spacing.lg
@@ -470,36 +484,50 @@ Item {
   // ---- editors: each is given `field` and `value` and emits commit(next) ----------------
   Component {
     id: switchEditor
-    Rectangle {
+    Switch {
       id: sw
       property var field: null
       property var value: false
       signal commit(var next)
-      implicitWidth: Style.space(42)
-      implicitHeight: Style.space(24)
-      width: implicitWidth
-      height: implicitHeight
-      radius: height / 2
-      color: sw.value ? Color.accent : Util.alpha(Color.foreground, 0.25)
-      // The Loader hands over the real value just after this is created; animating only
-      // once that has settled keeps the knob from sliding into place when the page opens.
-      property bool settled: false
-      Component.onCompleted: Qt.callLater(function () { sw.settled = true })
+      checked: !!sw.value
+      onToggled: sw.commit(!sw.value)
+    }
+  }
 
-      Rectangle {
-        width: parent.height - 6
-        height: width
-        radius: width / 2
-        y: 3
-        x: sw.value ? parent.width - width - 3 : 3
-        color: Color.menu.background
-        Behavior on x { enabled: sw.settled; NumberAnimation { duration: 100 } }
-      }
-      MouseArea {
-        anchors.fill: parent
-        cursorShape: Qt.PointingHandCursor
-        onClicked: sw.commit(!sw.value)
-      }
+  // A button on the right of the setting, for something to do rather than something to set.
+  Component {
+    id: actionEditor
+    SettingsPill {
+      id: act
+      property var field: null
+      property var value: null
+      signal commit(var next)
+      text: act.field && act.field.buttonText ? act.field.buttonText : ""
+      danger: !!(act.field && act.field.danger)
+      onClicked: act.commit(true)
+    }
+  }
+
+  // A value to read, not to change: on the right of the label, or under it, full width, when stacked.
+  Component {
+    id: infoEditor
+    Text {
+      id: info
+      property var field: null
+      property var value: null
+      signal commit(var next)
+      readonly property bool stacked: !!(info.field && info.field.stacked)
+      textFormat: Text.PlainText
+      width: info.stacked ? (parent ? parent.width : 0) : Math.min(implicitWidth, parent ? parent.width * 0.62 : implicitWidth)
+      horizontalAlignment: info.stacked ? Text.AlignLeft : Text.AlignRight
+      wrapMode: Text.Wrap
+      text: info.field && info.field.text !== undefined && info.field.text !== null ? String(info.field.text) : ""
+      color: !info.field ? Color.foreground
+        : info.field.tone === "bad" ? Color.urgent
+        : info.field.tone === "ok" ? Color.accent
+        : info.field.tone === "muted" ? Util.alpha(Color.foreground, 0.55) : Color.foreground
+      font.family: Style.font.family
+      font.pixelSize: info.stacked ? Style.font.bodySmall : Style.font.body
     }
   }
 

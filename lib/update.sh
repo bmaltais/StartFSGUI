@@ -1,8 +1,9 @@
 # shellcheck shell=bash
-# Upgrading a node is StartFS's own installer (scripts/install.sh in bmaltais/StartFS): it picks the release for the machine,
+# Installing StartFS on one node. Since StartFS 1.10.0 the cluster upgrades itself (`startfs update`, see cmd_upgrade in
+# common.sh); this is the fallback for a node on a release older than 1.10.0 (which cannot do that), a broken node, or a
+# reinstall. It is StartFS's own installer (scripts/install.sh in bmaltais/StartFS): it picks the release for the machine,
 # verifies its checksum, swaps the binary (the old one stays as startfs.prev), restarts the daemon and rolls back if it does not
-# answer. This file only runs it where the node is: here for this node, over ssh for another. StartFS has no built-in cluster
-# update on purpose (.out-of-scope/built-in-update-command.md in its repo), and this is the loop that note recommends.
+# answer. This file only runs it where the node is: here for this node, over ssh for another.
 
 readonly INSTALL_URL="https://raw.githubusercontent.com/bmaltais/StartFS/main/scripts/install.sh"
 
@@ -18,8 +19,8 @@ run_on() {
   else ssh -o BatchMode=yes -o ConnectTimeout=8 -- "$host" "$cmd"; fi
 }
 
-# update_args <args...>: sets UPD_HOST ("" for this node) and UPD_VERSION ("" for the latest release).
-update_args() {
+# install_args <args...>: sets UPD_HOST ("" for this node) and UPD_VERSION ("" for the latest release).
+install_args() {
   UPD_HOST="" UPD_VERSION="" UPD_SELF=0 UPD_NAME=""
   while (($#)); do
     case $1 in
@@ -36,7 +37,7 @@ update_args() {
 
 # version --host H [--self]: {ok, version, protocol} of the startfs installed there.
 cmd_version() {
-  update_args "$@"
+  install_args "$@"
   local out
   out=$(run_on "$UPD_HOST" 'PATH="$HOME/.local/bin:$PATH" startfs --version' 2>&1) || { reply_err "${out:-no answer}"; return 1; }
   if [[ $out =~ ^startfs\ ([0-9][^\ ]*)(\ \(protocol\ ([0-9]+)\))? ]]; then
@@ -46,10 +47,10 @@ cmd_version() {
   fi
 }
 
-# update --host H [--self] [--version vX.Y.Z]: runs the installer there, its output line by line on stdout. Exit 0 when the
+# install --host H [--self] [--version vX.Y.Z]: runs the installer there, its output line by line on stdout. Exit 0 when the
 # node is current afterwards (including "already up to date").
-cmd_update() {
-  update_args "$@"
+cmd_install() {
+  install_args "$@"
   local pin=""
   [[ -z $UPD_VERSION ]] || pin="STARTFS_VERSION=$UPD_VERSION "
   # Through a file, not a pipe into sh: a failed download must fail the update, and plain sh has no pipefail.
